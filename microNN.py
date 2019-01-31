@@ -4,7 +4,7 @@ Copyright © 2019 Jean-Christophe Bos & HC² (www.hc2.fr)
 """
 
 
-from   math import ceil, exp, log
+from   math import ceil, exp, log, sin, cos
 from   time import time
 import json
 
@@ -130,8 +130,8 @@ class MicroNN :
                maxValue <= minValue :
                 raise MicroNN.ValueTypeException('"minvalue" and "maxvalue" are not correct.')
             super().__init__()
-            self._minValue = float(minValue)
-            self._maxValue = float(maxValue)
+            self._minValue = minValue
+            self._maxValue = maxValue
 
         # -[ Methods ]------------------------------------------
 
@@ -145,7 +145,7 @@ class MicroNN :
                 raise MicroNN.ValueTypeException('Value must be of "float" or "int" type.')
             if value < self._minValue or value > self._maxValue :
                 raise MicroNN.ValueTypeException('Value must be >= %s and <= %s.' % (self._minValue, self._maxValue))
-            return float(value - self._minValue) / (self._maxValue - self._minValue)
+            return ( float(value - self._minValue) / (self._maxValue - self._minValue) )
 
         # ------------------------------------------------------
 
@@ -194,19 +194,24 @@ class MicroNN :
     # --( Class : BoolValueType )----------------------------------------------
     # -------------------------------------------------------------------------
 
-    class BoolValueType(ValueType) :
+    class BoolValueType(IntValueType) :
+
+        # -[ Constructor ]--------------------------------------
+
+        def __init__(self) :
+            super().__init__(0, 1)
 
         # -[ Methods ]------------------------------------------
 
         def FromAnalog(self, value) :
-            return (value >= 0.5)
+            return bool(super().FromAnalog(value))
 
         # ------------------------------------------------------
 
         def ToAnalog(self, value) :
             if type(value) is not bool :
                 raise MicroNN.ValueTypeException('Value must be of "bool" type.')
-            return float(value)
+            return super().ToAnalog(int(value))
 
         # ------------------------------------------------------
 
@@ -1264,6 +1269,14 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         @staticmethod
+        def Identity(x, derivative=False) :
+            if derivative :
+                return 1.0
+            return x
+
+        # ------------------------------------------------------
+
+        @staticmethod
         def Heaviside(x, derivative=False) :
             if derivative :
                 return 1.0
@@ -1292,18 +1305,18 @@ class MicroNN :
         @staticmethod
         def ReLU(x, derivative=False) :
             if derivative :
-                return 1.0
-            return 0.0 if x < 0 else x
+                return 0.001 if x < 0 else 1.0
+            return max(0.0, x)
 
         # ------------------------------------------------------
 
-        PReLU_Alpha = 0.05
+        LeakyReLU_Alpha = 0.01
 
         @staticmethod
-        def PReLU(x, derivative=False) :
+        def LeakyReLU(x, derivative=False) :
             if derivative :
-                return MicroNN.ActFunctions.PReLU_Alpha if x < 0 else 1.0
-            return (MicroNN.ActFunctions.PReLU_Alpha * x) if x < 0 else x
+                return MicroNN.ActFunctions.LeakyReLU_Alpha if x < 0 else 1.0
+            return max(MicroNN.ActFunctions.LeakyReLU_Alpha * x, x)
 
         # ------------------------------------------------------
 
@@ -1312,6 +1325,14 @@ class MicroNN :
             if derivative :
                 return 1 / (1 + exp(-x))
             return log(1 + exp(x))
+
+        # ------------------------------------------------------
+
+        @staticmethod
+        def Sinusoid(x, derivative=False) :
+            if derivative :
+                return cos(x)
+            return sin(x)
 
         # ------------------------------------------------------
 

@@ -29,7 +29,7 @@ microNN.AddLayer       ( dimensions     = MicroNN.Init1D(shapesCount=2),
 
 microNN.AddOutputLayer ( dimensions     = MicroNN.Init1D(shapesCount=1),
                          shape          = MicroNN.Shape.Bool,
-                         activationFunc = MicroNN.ActFunctions.ReLU,
+                         activationFunc = MicroNN.ActFunctions.LeakyReLU,
                          connStruct     = MicroNN.FullyConnected )
 
 #microNN = MicroNN.LoadFromJSONFile('XOR.json')
@@ -53,3 +53,4 @@ print( "  - False XOR True  = %s" % microNN.Predict([False, True] )[0] )
 print( "  - True  XOR True  = %s" % microNN.Predict([True , True] )[0] )
 print( "  - True  XOR False = %s" % microNN.Predict([True , False])[0] )
 print()
+
