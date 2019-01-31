@@ -20,17 +20,17 @@ print()
 microNN = MicroNN()
 
 microNN.AddInputLayer  ( dimensions     = MicroNN.Init1D(shapesCount=2),
-	   					 shape 		    = MicroNN.Shape.Bool )
+                         shape          = MicroNN.Shape.Bool )
 
 microNN.AddLayer       ( dimensions     = MicroNN.Init1D(shapesCount=2),
-						 shape 		    = MicroNN.Shape.Neuron,
-						 activationFunc = MicroNN.ActFunctions.Gaussian,
-						 connStruct     = MicroNN.FullyConnected )
+                         shape          = MicroNN.Shape.Neuron,
+                         activationFunc = MicroNN.ActFunctions.Gaussian,
+                         connStruct     = MicroNN.FullyConnected )
 
 microNN.AddOutputLayer ( dimensions     = MicroNN.Init1D(shapesCount=1),
-						 shape 		    = MicroNN.Shape.Bool,
-						 activationFunc = MicroNN.ActFunctions.ReLU,
-						 connStruct     = MicroNN.FullyConnected )
+                         shape          = MicroNN.Shape.Bool,
+                         activationFunc = MicroNN.ActFunctions.ReLU,
+                         connStruct     = MicroNN.FullyConnected )
 
 #microNN = MicroNN.LoadFromJSONFile('XOR.json')
 print()
