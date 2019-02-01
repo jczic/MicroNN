@@ -1,38 +1,23 @@
 
 from microNN import MicroNN
 
-"""
 microNN = MicroNN()
 
-l1 = MicroNN.InputLayer(microNN, [100, 100], MicroNN.ColorShape())
-l2 = MicroNN.Layer(microNN, [30, 30], MicroNN.ColorShape(), 'sigmoid', MicroNN.LocallyConnStruct(MicroNN.LocallyConnStruct.ROLE_DECREASE, 2))
-l3 = MicroNN.Layer(microNN, [10, 10], MicroNN.ColorShape(), 'sigmoid', MicroNN.LocallyConnStruct(MicroNN.LocallyConnStruct.ROLE_DECREASE, 1))
-l4 = MicroNN.Layer(microNN, [2, 2], MicroNN.ValueShape(MicroNN.PercentValueType()), 'sigmoid', MicroNN.LocallyConnStruct(MicroNN.LocallyConnStruct.ROLE_DECREASE))
-l5 = MicroNN.OutputLayer(microNN, [100], MicroNN.ValueShape(MicroNN.PercentValueType()), 'sigmoid', MicroNN.FullyConnStruct())
+microNN.AddInputLayer  ( dimensions = MicroNN.Init1D(shapesCount=2),
+                         shape      = MicroNN.Shape.Bool )
 
-print()
-print('-------------------------------------')
-print(microNN.SaveToJSONFile("test2.json"))
-print('-------------------------------------')
-print()
-"""
+microNN.AddLayer       ( dimensions = MicroNN.Init1D(shapesCount=2),
+                         shape      = MicroNN.Shape.Neuron,
+                         activation = MicroNN.GaussianActivation(),
+                         connStruct = MicroNN.FullyConnected )
 
-microNN = MicroNN()
-
-microNN.AddInputLayer  ( dimensions     = MicroNN.Init1D(shapesCount=2),
-                         shape          = MicroNN.Shape.Bool )
-
-microNN.AddLayer       ( dimensions     = MicroNN.Init1D(shapesCount=2),
-                         shape          = MicroNN.Shape.Neuron,
-                         activationFunc = MicroNN.ActFunctions.Gaussian,
-                         connStruct     = MicroNN.FullyConnected )
-
-microNN.AddOutputLayer ( dimensions     = MicroNN.Init1D(shapesCount=1),
-                         shape          = MicroNN.Shape.Bool,
-                         activationFunc = MicroNN.ActFunctions.LeakyReLU,
-                         connStruct     = MicroNN.FullyConnected )
+microNN.AddOutputLayer ( dimensions = MicroNN.Init1D(shapesCount=1),
+                         shape      = MicroNN.Shape.Bool,
+                         activation = MicroNN.LeakyReLUActivation(),
+                         connStruct = MicroNN.FullyConnected )
 
 #microNN = MicroNN.LoadFromJSONFile('XOR.json')
+
 print()
 print('MicroNN :')
 print('  - Layers      : %s' % microNN.LayersCount)
@@ -45,6 +30,8 @@ microNN.AddExample( [False, True ], [True ] )
 microNN.AddExample( [True , True ], [False] )
 microNN.AddExample( [True , False], [True ] )
 microNN.LearnExamples()
+
+#microNN.SaveToJSONFile("XOR.json")
 
 print()
 print( "LEARNED :" )

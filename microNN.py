@@ -30,9 +30,8 @@ class MicroNN :
 
     DEFAULT_ERROR_CORRECTION_WEIGHTING  = 0.30
     DEFAULT_CONN_PLASTICITY_STRENGTHING = 0.75
-    DEFAULT_NETWORK_LEARNING_GAIN       = 0.99
 
-    SUCCESS_PERCENT_LEARNED             = 99.0
+    SUCCESS_PERCENT_LEARNED             = 99.5
 
     # -------------------------------------------------------------------------
     # --( Class : ValueTypeException )-----------------------------------------
@@ -51,7 +50,7 @@ class MicroNN :
 
         def __init__(self) :
             if type(self) is MicroNN.ValueType :
-                raise MicroNN.ValueTypeException('"ValueType" cannot be instancied.')
+                raise MicroNN.ValueTypeException('"ValueType" is an abstract class and cannot be instancied.')
 
         # -[ Methods ]------------------------------------------
 
@@ -62,7 +61,6 @@ class MicroNN :
 
         def ToAnalog(self, value) :
             raise MicroNN.ValueTypeException('"ToAnalog" method must be implemented.')
-
 
         # ------------------------------------------------------
 
@@ -267,7 +265,7 @@ class MicroNN :
 
         def __init__(self, flattenLen, valueType=None) :
             if type(self) is MicroNN.Shape :
-                raise MicroNN.ShapeException('"Shape" cannot be instancied.')
+                raise MicroNN.ShapeException('"Shape" is an abstract class and cannot be instancied.')
             if valueType is not None and not isinstance(valueType, MicroNN.ValueType) :
                 raise MicroNN.ShapeException('"valueType" is not correct.')
             self._flattenLen = flattenLen
@@ -605,7 +603,7 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def _computeInput(self) :
+        def ComputeInput(self) :
             self._computedInput = 0.0
             for conn in self._inputConnections :
                 self._computedInput += conn.NeuronSrc.ComputedOutput * conn.Weight
@@ -613,9 +611,7 @@ class MicroNN :
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
-            self._computeInput()
-            self._computedOutput = self._parentLayer.ActivationFunc( self._computedInput * \
-                                                                     self._parentLayer.ParentMicroNN.NetworkLearningGain )
+            self._computedOutput = self._parentLayer.Activation.Get(self)
 
         # ------------------------------------------------------
 
@@ -627,9 +623,7 @@ class MicroNN :
                 for conn in self._outputConnections :
                     self._computedDeltaError += conn.NeuronDst._computedSignalError * conn.Weight
             self._computedSignalError = self._computedDeltaError \
-                                      * self._parentLayer.ParentMicroNN.NetworkLearningGain \
-                                      * self._parentLayer.ActivationFunc( self._computedInput,
-                                                                          derivative = True )
+                                      * self._parentLayer.Activation.GetDerivative(self)
 
         # ------------------------------------------------------
 
@@ -668,6 +662,10 @@ class MicroNN :
             return len(self._outputConnections)
 
         @property
+        def ComputedInput(self) :
+            return self._computedInput
+
+        @property
         def ComputedOutput(self) :
             return self._computedOutput
         @ComputedOutput.setter
@@ -700,6 +698,11 @@ class MicroNN :
             super().__init__(parentLayer, index)
             self.ComputedOutput = biasValue
 
+        # -[ Methods ]------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'Identity' }
+
     # -------------------------------------------------------------------------
     # --( Class : LayerException )---------------------------------------------
     # -------------------------------------------------------------------------
@@ -719,9 +722,9 @@ class MicroNN :
                       parentMicroNN,
                       dimensions,
                       shape,
-                      activationFunc = None,
-                      connStruct     = None,
-                      biasValue      = 1.0 ) :
+                      activation    = None,
+                      connStruct    = None,
+                      biasValue     = 1.0 ) :
             if not isinstance(parentMicroNN, MicroNN) :
                 raise MicroNN.LayerException('"parentMicroNN" must be of MicroNN type.')
             if type(dimensions) not in (list, tuple) or len(dimensions) == 0 :
@@ -731,15 +734,13 @@ class MicroNN :
                     raise MicroNN.LayerException('"dimensions" must contain only "int" types greater than zero.')
             if not isinstance(shape, MicroNN.Shape) :
                 raise MicroNN.LayerException('"shape" must be of Shape type.')
-            if activationFunc is not None :
+            if activation is not None :
                 if isinstance(self, MicroNN.InputLayer) :
-                    raise MicroNN.LayerException('"activationFunc" must be "None" for this layer type.')
-                if isinstance(activationFunc, str) :
-                    activationFunc = MicroNN.GetActFunctionByName(activationFunc)
-                elif not hasattr(activationFunc, '__call__') :
-                    raise MicroNN.LayerException('"activationFunc" must be an activation function or directly the known name.')
+                    raise MicroNN.LayerException('"activation" must be "None" for this layer type.')
+                if not isinstance(activation, MicroNN.Activation) :
+                    raise MicroNN.LayerException('"activation" must be of Activation type.')
             elif not isinstance(self, MicroNN.InputLayer) :
-                raise MicroNN.LayerException('"activationFunc" must be defined for this layer type.')
+                raise MicroNN.LayerException('"activation" must be defined for this layer type.')
             if parentMicroNN.Layers :
                 topLayer = parentMicroNN.Layers[len(parentMicroNN.Layers)-1]
             else :
@@ -762,7 +763,7 @@ class MicroNN :
             self._parentMicroNN  = parentMicroNN
             self._dimensions     = dimensions
             self._shape          = shape
-            self._actFunc        = activationFunc
+            self._activation     = activation
             self._topLayer       = topLayer
             if not isinstance(self, MicroNN.InputLayer) :
                 self._bias = MicroNN.Bias( parentLayer = self,
@@ -822,6 +823,41 @@ class MicroNN :
 
         # ------------------------------------------------------
 
+        def _recurGetNeuronsList(self, neurons, neuronsList, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurGetNeuronsList(neurons[i], neuronsList, dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neuronsList.append(neurons[i])
+
+        # ------------------------------------------------------
+
+        def GetNeuronsList(self) :
+            neuronsList = [ ]
+            self._recurGetNeuronsList(self._neurons, neuronsList)
+            return neuronsList
+
+        # ------------------------------------------------------
+
+        def _recurComputeInput(self, neurons, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurComputeInput(neurons[i], dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neurons[i].ComputeInput()
+
+        # ------------------------------------------------------
+
+        def ComputeInput(self) :
+            if isinstance(self, MicroNN.InputLayer) :
+                raise MicroNN.LayerException('An input layer cannot computes it input.')
+            self._recurComputeInput(self._neurons)
+            self._activation.OnLayerInputComputed(self)
+
+        # ------------------------------------------------------
+
         def _recurComputeOutput(self, neurons, dimIdx=0) :
             if dimIdx < self.DimensionsCount :
                 for i in range(self._dimensions[dimIdx]) :
@@ -833,10 +869,9 @@ class MicroNN :
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
-            if not isinstance(self, MicroNN.InputLayer) :
-                self._recurComputeOutput(self._neurons)
-                return True
-            return False
+            if isinstance(self, MicroNN.InputLayer) :
+                raise MicroNN.LayerException('An input layer cannot computes it output.')
+            self._recurComputeOutput(self._neurons)
 
         # ------------------------------------------------------
 
@@ -940,18 +975,18 @@ class MicroNN :
 
         def GetAsDataObject(self) :
             if isinstance(self, MicroNN.InputLayer) :
-                actFunc = None
-                bias    = None
-                conns   = None
+                activation = None
+                bias       = None
+                conns      = None
             else :
-                actFunc = self._actFunc.__name__
-                bias    = { 'OutputValue' : self._bias.ComputedOutput }
-                conns   = self._recurGetConnsDataObject(self._neurons)
+                activation = self._activation.GetAsDataObject()
+                bias       = { 'Value' : self._bias.ComputedOutput }
+                conns      = self._recurGetConnsDataObject(self._neurons)
             return {
                 'Type'            : type(self).__name__,
                 'Dimensions'      : self._dimensions,
                 'Shape'           : self._shape.GetAsDataObject(),
-                'ActivationFunc'  : actFunc,
+                'Activation'      : activation,
                 'Bias'            : bias,
                 'NeuronsCount'    : self._neuronsCount,
                 'InputConnsCount' : self._inputConnCount,
@@ -966,27 +1001,28 @@ class MicroNN :
                 layerType = o['Type']
                 dims      = o['Dimensions']
                 shape     = MicroNN.Shape.CreateFromDataObject(o['Shape'])
-                actFunc   = o['ActivationFunc']
-                bias      = o['Bias']
-                conns     = o['Connections']
                 if layerType == 'InputLayer' :
                     return MicroNN.InputLayer(parentMicroNN, dims, shape)
-                elif layerType == 'OutputLayer' :
-                    return MicroNN.OutputLayer( parentMicroNN,
-                                                dims,
-                                                shape,
-                                                actFunc,
-                                                MicroNN.DataObjectConnStruct(conns),
-                                                bias['OutputValue'] )
-                elif layerType == 'Layer' :
-                    return MicroNN.Layer( parentMicroNN,
-                                          dims,
-                                          shape,
-                                          actFunc,
-                                          MicroNN.DataObjectConnStruct(conns),
-                                          bias['OutputValue'] )
                 else :
-                    raise Exception()
+                    activation = MicroNN.Activation.CreateFromDataObject(o['Activation'])
+                    biasValue  = o['Bias']['Value']
+                    connStruct = MicroNN.DataObjectConnStruct(o['Connections'])
+                    if layerType == 'OutputLayer' :
+                        return MicroNN.OutputLayer( parentMicroNN,
+                                                    dims,
+                                                    shape,
+                                                    activation,
+                                                    connStruct,
+                                                    biasValue )
+                    elif layerType == 'Layer' :
+                        return MicroNN.Layer( parentMicroNN,
+                                              dims,
+                                              shape,
+                                              activation,
+                                              connStruct,
+                                              biasValue )
+                    else :
+                        raise Exception()
             except :
                 raise MicroNN.LayerException('Data object is not valid.')
 
@@ -1009,8 +1045,8 @@ class MicroNN :
             return self._shape
 
         @property
-        def ActivationFunc(self) :
-            return self._actFunc
+        def Activation(self) :
+            return self._activation
 
         @property
         def TopLayer(self) :
@@ -1104,7 +1140,7 @@ class MicroNN :
 
         def __init__(self) :
             if type(self) is MicroNN.ConnStruct :
-                raise MicroNN.ConnStructException('"ConnStruct" cannot be instancied.')
+                raise MicroNN.ConnStructException('"ConnStruct" is an abstract class and cannot be instancied.')
 
         # -[ Methods ]------------------------------------------
 
@@ -1256,92 +1292,337 @@ class MicroNN :
                 raise MicroNN.ConnStructException('DataObjectConnStruct : Data object is not valid.')
 
     # -------------------------------------------------------------------------
-    # --( Class : ActFunctions )-----------------------------------------------
+    # --( Class : ActivationException )----------------------------------------
     # -------------------------------------------------------------------------
 
-    class ActFunctions :
+    class ActivationException(Exception) :
+        pass
+
+    # -------------------------------------------------------------------------
+    # --( Abstract class : Activation )----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class Activation :
 
         # -[ Constructor ]--------------------------------------
 
         def __init__(self) :
-            raise MicroNNException('"ActFunctions" cannot be instancied.')
+            if type(self) is MicroNN.Activation :
+                raise MicroNN.ActivationException('"Activation" is an abstract class and cannot be instancied.')
 
         # -[ Methods ]------------------------------------------
 
-        @staticmethod
-        def Identity(x, derivative=False) :
-            if derivative :
-                return 1.0
-            return x
+        def OnLayerInputComputed(self, layer) :
+            pass
+
+        # ------------------------------------------------------
+
+        def Get(self, neuron) :
+            raise MicroNN.ActivationException('"Get" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            raise MicroNN.ActivationException('"GetDerivative" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            raise MicroNN.ActivationException('"GetAsDataObject" method must be implemented.')
 
         # ------------------------------------------------------
 
         @staticmethod
-        def Heaviside(x, derivative=False) :
-            if derivative :
-                return 1.0
-            return 0.0 if x < 0 else 1.0
+        def CreateFromDataObject(o) :
+            try :
+                name = o['Name']
+                if   name == 'Identity' :
+                    return MicroNN.IdentityActivation()
+                elif name == 'Heaviside' :
+                    return MicroNN.HeavisideActivation()
+                elif name == 'Sigmoid' :
+                    return MicroNN.SigmoidActivation()
+                elif name == 'TanH' :
+                    return MicroNN.TanHActivation()
+                elif name == 'ReLU' :
+                    return MicroNN.ReLUActivation()
+                elif name == 'PReLU' :
+                    return MicroNN.PReLUActivation(o['Alpha'])
+                elif name == 'LeakyReLU' :
+                    return MicroNN.LeakyReLUActivation()
+                elif name == 'SoftPlus' :
+                    return MicroNN.SoftPlusActivation()
+                elif name == 'Sinusoid' :
+                    return MicroNN.SinusoidActivation()
+                elif name == 'Gaussian' :
+                    return MicroNN.GaussianActivation()
+                elif name == 'SoftMax' :
+                    return MicroNN.SoftMaxActivation()
+                else :
+                    raise Exception()
+            except :
+                raise MicroNN.ActivationException('Data object is not valid.')
+
+    # -------------------------------------------------------------------------
+    # --( Class : IdentityActivation )-----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class IdentityActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return neuron.ComputedInput
 
         # ------------------------------------------------------
 
-        @staticmethod
-        def Sigmoid(x, derivative=False) :
-            f = 1.0 / ( 1.0 + exp(-x) )
-            if derivative :
-                return f * (1.0-f)
-            return f
+        def GetDerivative(self, neuron) :
+            return 1.0
 
         # ------------------------------------------------------
 
-        @staticmethod
-        def TanH(x, derivative=False) :
-            f = ( 2.0 / (1.0 + exp(-2.0 * x)) ) - 1.0
-            if derivative :
-                return 1.0 - (f ** 2)
-            return f
+        def GetAsDataObject(self) :
+            return { 'Name' : 'Identity' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : HeavisideActivation )----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class HeavisideActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return 0.0 if neuron.ComputedInput < 0 else 1.0
 
         # ------------------------------------------------------
 
-        @staticmethod
-        def ReLU(x, derivative=False) :
-            if derivative :
-                return 0.001 if x < 0 else 1.0
-            return max(0.0, x)
+        def GetDerivative(self, neuron) :
+            return 1.0
 
         # ------------------------------------------------------
 
-        LeakyReLU_Alpha = 0.01
+        def GetAsDataObject(self) :
+            return { 'Name' : 'Heaviside' }
 
-        @staticmethod
-        def LeakyReLU(x, derivative=False) :
-            if derivative :
-                return MicroNN.ActFunctions.LeakyReLU_Alpha if x < 0 else 1.0
-            return max(MicroNN.ActFunctions.LeakyReLU_Alpha * x, x)
+    # -------------------------------------------------------------------------
+    # --( Class : SigmoidActivation )------------------------------------------
+    # -------------------------------------------------------------------------
 
-        # ------------------------------------------------------
+    class SigmoidActivation(Activation) :
 
-        @staticmethod
-        def SoftPlus(x, derivative=False) :
-            if derivative :
-                return 1 / (1 + exp(-x))
-            return log(1 + exp(x))
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return 1.0 / ( 1.0 + exp(-neuron.ComputedInput) )
 
         # ------------------------------------------------------
 
-        @staticmethod
-        def Sinusoid(x, derivative=False) :
-            if derivative :
-                return cos(x)
-            return sin(x)
+        def GetDerivative(self, neuron) :
+            f = neuron.ComputedOutput
+            return f * (1.0-f)
 
         # ------------------------------------------------------
 
-        @staticmethod
-        def Gaussian(x, derivative=False) :
-            f = exp(-x ** 2)
-            if derivative :
-                return -2 * x * f
-            return f
+        def GetAsDataObject(self) :
+            return { 'Name' : 'Sigmoid' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : TanHActivation )---------------------------------------------
+    # -------------------------------------------------------------------------
+
+    class TanHActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return ( 2.0 / (1.0 + exp(-2.0 * neuron.ComputedInput)) ) - 1.0
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            f = neuron.ComputedOutput
+            return 1.0 - (f ** 2)
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'TanH' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : ReLUActivation )---------------------------------------------
+    # -------------------------------------------------------------------------
+
+    class ReLUActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return max(0.0, neuron.ComputedInput)
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            return 0.001 if neuron.ComputedInput < 0 else 1.0
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'ReLU' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : PReLUActivation )--------------------------------------------
+    # -------------------------------------------------------------------------
+
+    class PReLUActivation(Activation) :
+
+        # -[ Constructor ]--------------------------------------
+
+        def __init__(self, alpha) :
+            if type(alpha) not in (float, int) :
+                raise MicroNN.ActivationException('"alpha" must be of "float" or "int" type.')
+            super().__init__()
+            self._alpha = float(alpha)
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return max(self._alpha * neuron.ComputedInput, neuron.ComputedInput)
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            return self._alpha if neuron.ComputedInput < 0 else 1.0
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return {
+                'Name'  : 'PReLU',
+                'Alpha' : self._alpha
+            }
+
+    # -------------------------------------------------------------------------
+    # --( Class : LeakyReLUActivation )----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class LeakyReLUActivation(PReLUActivation) :
+
+        # -[ Constructor ]--------------------------------------
+
+        def __init__(self) :
+            super().__init__(alpha=0.01)
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'LeakyReLU' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : SoftPlusActivation )-----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class SoftPlusActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return log(1 + exp(neuron.ComputedInput))
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            return 1 / (1 + exp(-neuron.ComputedInput))
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'SoftPlus' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : SinusoidActivation )-----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class SinusoidActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return sin(neuron.ComputedInput)
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            return cos(neuron.ComputedInput)
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'Sinusoid' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : GaussianActivation )-----------------------------------------
+    # -------------------------------------------------------------------------
+
+    class GaussianActivation(Activation) :
+
+        # -[ Methods ]------------------------------------------
+
+        def Get(self, neuron) :
+            return exp(-neuron.ComputedInput ** 2)
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            f = neuron.ComputedOutput
+            return -2 * neuron.ComputedInput * f
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'Gaussian' }
+
+    # -------------------------------------------------------------------------
+    # --( Class : SoftMaxActivation )------------------------------------------
+    # -------------------------------------------------------------------------
+
+    class SoftMaxActivation(Activation) :
+
+        # -[ Constructor ]--------------------------------------
+
+        def __init__(self) :
+            super().__init__()
+            self._layerNrnList    = [ ]
+            self._layerNrnOutExps = [ ]
+            self._expsSum         = 0.0
+
+        # -[ Methods ]------------------------------------------
+
+        def OnLayerInputComputed(self, layer) :
+            if not self._layerNrnList :
+                self._layerNrnList    = layer.GetNeuronsList()
+                self._layerNrnOutExps = [0] * len(self._layerNrnList)
+            self._expsSum = 0.0
+            for i in range(len(self._layerNrnList)) :
+                x = exp(self._layerNrnList[i].ComputedInput)
+                self._layerNrnOutExps[i]  = x
+                self._expsSum            += x
+
+        # ------------------------------------------------------
+
+        def Get(self, neuron) :
+            return self._layerNrnOutExps[neuron.Index] / self._expsSum
+
+        # ------------------------------------------------------
+
+        def GetDerivative(self, neuron) :
+            f = neuron.ComputedOutput
+            return f * (1.0-f)
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            return { 'Name' : 'SoftMax' }
 
     # -------------------------------------------------------------------------
     # -------------------------------------------------------------------------
@@ -1352,7 +1633,6 @@ class MicroNN :
     def __init__(self) :
         self._errorCorrectionWeighting  = MicroNN.DEFAULT_ERROR_CORRECTION_WEIGHTING
         self._connPlasticityStrengthing = MicroNN.DEFAULT_CONN_PLASTICITY_STRENGTHING
-        self._networkLearningGain       = MicroNN.DEFAULT_NETWORK_LEARNING_GAIN
         self._layers                    = [ ]
         self._examples                  = [ ]
 
@@ -1363,19 +1643,6 @@ class MicroNN :
         if 'rng' in globals() :
             return rng() / (2 ** 24)
         return random()
-
-    # ------------------------------------------------------
-
-    @staticmethod
-    def GetActFunctionByName(name) :
-        if not isinstance(name, str) :
-            raise MicroNNException('"name" must be of "str" type.')
-        for attrName in MicroNN.ActFunctions.__dict__ :
-            if attrName.lower() == name.lower() :
-                attr = getattr(MicroNN.ActFunctions, attrName)
-                if hasattr(attr, '__call__') :
-                    return attr
-        raise MicroNNException('Activation function "%s" doesn\'t exists.' % name)
 
     # ------------------------------------------------------
 
@@ -1409,15 +1676,15 @@ class MicroNN :
     def AddLayer( self,
                   dimensions,
                   shape,
-                  activationFunc = None,
-                  connStruct     = None,
-                  biasValue      = 1.0 ) :
-        return MicroNN.Layer( parentMicroNN  = self,
-                              dimensions     = dimensions,
-                              shape          = shape,
-                              activationFunc = activationFunc,
-                              connStruct     = connStruct,
-                              biasValue      = biasValue )
+                  activation  = None,
+                  connStruct  = None,
+                  biasValue   = 1.0 ) :
+        return MicroNN.Layer( parentMicroNN = self,
+                              dimensions    = dimensions,
+                              shape         = shape,
+                              activation    = activation,
+                              connStruct    = connStruct,
+                              biasValue     = biasValue )
 
     # ------------------------------------------------------
 
@@ -1431,30 +1698,26 @@ class MicroNN :
     def AddOutputLayer( self,
                         dimensions,
                         shape,
-                        activationFunc = None,
-                        connStruct     = None,
-                        biasValue      = 1.0 ) :
-        return MicroNN.OutputLayer( parentMicroNN  = self,
-                                    dimensions     = dimensions,
-                                    shape          = shape,
-                                    activationFunc = activationFunc,
-                                    connStruct     = connStruct,
-                                    biasValue      = biasValue )
+                        activation  = None,
+                        connStruct  = None,
+                        biasValue   = 1.0 ) :
+        return MicroNN.OutputLayer( parentMicroNN = self,
+                                    dimensions    = dimensions,
+                                    shape         = shape,
+                                    activation    = activation,
+                                    connStruct    = connStruct,
+                                    biasValue     = biasValue )
 
     # ------------------------------------------------------
 
-    def AddQLearningOutputLayer( self,
-                                 actionsCount,
-                                 activationFunc = None,
-                                 biasValue      = 1.0 ) :
+    def AddQLearningOutputLayer(self, actionsCount) :
         if not isinstance(actionsCount, int) or actionsCount <= 1 :
             raise MicroNNException('"actionsCount" must be of "int" type greater than 1.')
-        return MicroNN.OutputLayer( parentMicroNN  = self,
-                                    dimensions     = MicroNN.Init1D(actionsCount),
-                                    shape          = MicroNN.ValueShape(),
-                                    activationFunc = activationFunc,
-                                    connStruct     = MicroNN.FullyConnStruct(),
-                                    biasValue      = biasValue )
+        return MicroNN.OutputLayer( parentMicroNN = self,
+                                    dimensions    = MicroNN.Init1D(actionsCount),
+                                    shape         = MicroNN.ValueShape(),
+                                    activation    = MicroNN.SoftMaxActivation(),
+                                    connStruct    = MicroNN.FullyConnStruct() )
 
     # ------------------------------------------------------
 
@@ -1596,7 +1859,6 @@ class MicroNN :
                 'MicroNNVersion'            : MicroNN.VERSION,
                 'ErrorCorrectionWeighting'  : self._errorCorrectionWeighting,
                 'ConnPlasticityStrengthing' : self._connPlasticityStrengthing,
-                'NetworkLearningGain'       : self._networkLearningGain,
                 'LayersCount'               : len(self._layers),
                 'Layers'                    : [ l.GetAsDataObject()
                                                 for l in self._layers ]
@@ -1618,7 +1880,6 @@ class MicroNN :
             microNN                           = MicroNN()
             microNN.ErrorCorrectionWeighting  = o['ErrorCorrectionWeighting']
             microNN.ConnPlasticityStrengthing = o['ConnPlasticityStrengthing']
-            microNN.NetworkLearningGain       = o['NetworkLearningGain']
             for oLayer in o['Layers'] :
                 MicroNN.Layer.CreateFromDataObject(microNN, oLayer)
             return microNN
@@ -1667,10 +1928,10 @@ class MicroNN :
 
     def _propagateSignal(self) :
         self._ensureNetworkIsComplete()
-        i = 1
-        while i < len(self._layers) :
-            self._layers[i].ComputeOutput()
-            i += 1
+        for layer in self._layers :
+            if not isinstance(layer, MicroNN.InputLayer) :
+                layer.ComputeInput()
+                layer.ComputeOutput()
 
     # ------------------------------------------------------
 
@@ -1713,15 +1974,6 @@ class MicroNN :
         if type(value) not in (float, int) :
             raise MicroNNException('"value" must be of "float" or "int" type.')
         self._connPlasticityStrengthing = float(value)
-
-    @property
-    def NetworkLearningGain(self) :
-        return self._networkLearningGain
-    @NetworkLearningGain.setter
-    def NetworkLearningGain(self, value) :
-        if type(value) not in (float, int) :
-            raise MicroNNException('"value" must be of "float" or "int" type.')
-        self._networkLearningGain = float(value)
 
     @property
     def Layers(self) :
