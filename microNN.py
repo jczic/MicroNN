@@ -31,7 +31,7 @@ class MicroNN :
     DEFAULT_ERROR_CORRECTION_WEIGHTING  = 0.30
     DEFAULT_CONN_PLASTICITY_STRENGTHING = 0.75
 
-    SUCCESS_PERCENT_LEARNED             = 99.5
+    MIN_LEARNED_SUCCESS_PERCENT         = 95
 
     # -------------------------------------------------------------------------
     # --( Class : ValueTypeException )-----------------------------------------
@@ -134,7 +134,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def FromAnalog(self, value) :
-            return self._minValue + ( max(0.0, min(1.0, value)) * (self._maxValue - self._minValue) )
+            return self._minValue + ( max(0.0, min(1.0, 0.5+value/2)) * (self._maxValue - self._minValue) )
 
         # ------------------------------------------------------
 
@@ -143,7 +143,7 @@ class MicroNN :
                 raise MicroNN.ValueTypeException('Value must be of "float" or "int" type.')
             if value < self._minValue or value > self._maxValue :
                 raise MicroNN.ValueTypeException('Value must be >= %s and <= %s.' % (self._minValue, self._maxValue))
-            return ( float(value - self._minValue) / (self._maxValue - self._minValue) )
+            return ( float(value - self._minValue) / (self._maxValue - self._minValue) - 0.5) * 2
 
         # ------------------------------------------------------
 
@@ -607,6 +607,7 @@ class MicroNN :
             self._computedInput = 0.0
             for conn in self._inputConnections :
                 self._computedInput += conn.NeuronSrc.ComputedOutput * conn.Weight
+            self._computedInput = max(-250.0, min(250.0, self._computedInput))
 
         # ------------------------------------------------------
 
@@ -1414,12 +1415,12 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def Get(self, neuron) :
-            return 1.0 / ( 1.0 + exp(-neuron.ComputedInput) )
+            return ( 1.0 / ( 1.0 + exp(-neuron.ComputedInput) ) - 0.5 ) * 2
 
         # ------------------------------------------------------
 
         def GetDerivative(self, neuron) :
-            f = neuron.ComputedOutput
+            f = neuron.ComputedOutput/2 + 0.5
             return f * (1.0-f)
 
         # ------------------------------------------------------
@@ -1569,12 +1570,12 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def Get(self, neuron) :
-            return exp(-neuron.ComputedInput ** 2)
+            return ( exp(- neuron.ComputedInput**2) - 0.5 ) * 2
 
         # ------------------------------------------------------
 
         def GetDerivative(self, neuron) :
-            f = neuron.ComputedOutput
+            f = neuron.ComputedOutput/2 + 0.5
             return -2 * neuron.ComputedInput * f
 
         # ------------------------------------------------------
@@ -1819,26 +1820,27 @@ class MicroNN :
     # ------------------------------------------------------
 
     def LearnExamples( self,
-                       maxSeconds      = 30,
-                       maxCount        = None,
-                       stopWhenLearned = True,
-                       verbose         = True ) :
+                       maxSeconds   = None,
+                       maxLearnings = None,
+                       verbose      = True ) :
         self._ensureNetworkIsComplete()
-        if not isinstance(maxSeconds, int) or maxSeconds <= 0 :
-            raise MicroNNException('"maxSeconds" must be of "int" type greater than zero.')
-        if maxCount is not None :
-            if not isinstance(maxCount, int) or maxCount <= 0 :
-                raise MicroNNException('"maxCount" must be of "int" type greater than zero.')
+        if maxSeconds is not None :
+            if not isinstance(maxSeconds, int) or maxSeconds <= 0 :
+                raise MicroNNException('"maxSeconds" must be of "int" type greater than zero.')
+        if maxLearnings is not None :
+            if not isinstance(maxLearnings, int) or maxLearnings <= 0 :
+                raise MicroNNException('"maxLearnings" must be of "int" type greater than zero.')
         examplesCount = len(self._examples)
         count         = 0
         if examplesCount > 0 :
-            endTime = time() + maxSeconds
-            while time() < endTime and \
-                  ( maxCount is None or count < maxCount ) :
+            endTime        = (time() + maxSeconds) if maxSeconds else None
+            lastSuccessAvg = -2**24
+            while ( endTime      is None or time() < endTime      ) and \
+                  ( maxLearnings is None or count  < maxLearnings ) :
                 ex = self._examples[count % examplesCount]
                 self.Learn(ex[0], ex[1])
                 count += 1
-                if count % examplesCount == 0 and (stopWhenLearned or printMAEAverage) :
+                if count % examplesCount == 0 :
                     successAvg = 0.0
                     for ex in self._examples :
                         successAvg += self.Test(ex[0], ex[1])
@@ -1846,9 +1848,10 @@ class MicroNN :
                     if verbose :
                         print( "MicroNN [ STEP : %s / SUCCESS : %s%% ]"
                                % ( count, round(successAvg*1000)/1000 ) )
-                    if stopWhenLearned and successAvg >= MicroNN.SUCCESS_PERCENT_LEARNED :
-                        break
-        return count
+                    if lastSuccessAvg > successAvg :
+                        return (successAvg >= MIN_LEARNED_SUCCESS_PERCENT)
+                    lastSuccessAvg = successAvg
+        return False
 
     # ------------------------------------------------------
 
@@ -2036,9 +2039,20 @@ class MicroNN :
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
 
-MicroNN.Shape.Neuron   = MicroNN.ValueShape()
-MicroNN.Shape.Bool     = MicroNN.ValueShape(MicroNN.BoolValueType())
-MicroNN.Shape.Byte     = MicroNN.ValueShape(MicroNN.ByteValueType())
-MicroNN.Shape.Percent  = MicroNN.ValueShape(MicroNN.PercentValueType())
-MicroNN.Shape.Color    = MicroNN.ColorShape()
-MicroNN.FullyConnected = MicroNN.FullyConnStruct()
+MicroNN.Shape.Neuron         = MicroNN.ValueShape()
+MicroNN.Shape.Bool           = MicroNN.ValueShape(MicroNN.BoolValueType())
+MicroNN.Shape.Byte           = MicroNN.ValueShape(MicroNN.ByteValueType())
+MicroNN.Shape.Percent        = MicroNN.ValueShape(MicroNN.PercentValueType())
+MicroNN.Shape.Color          = MicroNN.ColorShape()
+
+MicroNN.Activation.Identity  = MicroNN.IdentityActivation()
+MicroNN.Activation.Heaviside = MicroNN.HeavisideActivation()
+MicroNN.Activation.Sigmoid   = MicroNN.SigmoidActivation()
+MicroNN.Activation.TanH      = MicroNN.TanHActivation()
+MicroNN.Activation.ReLU      = MicroNN.ReLUActivation()
+MicroNN.Activation.LeakyReLU = MicroNN.LeakyReLUActivation()
+MicroNN.Activation.SoftPlus  = MicroNN.SoftPlusActivation()
+MicroNN.Activation.Sinusoid  = MicroNN.SinusoidActivation()
+MicroNN.Activation.Gaussian  = MicroNN.GaussianActivation()
+
+MicroNN.FullyConnected       = MicroNN.FullyConnStruct()
