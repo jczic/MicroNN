@@ -3,18 +3,21 @@ from microNN import MicroNN
 
 microNN = MicroNN()
 
-microNN.AddInputLayer  ( dimensions = MicroNN.Init1D(shapesCount=2),
-                         shape      = MicroNN.Shape.Bool )
+l1 = microNN.AddInputLayer  ( dimensions = MicroNN.Init1D(2),
+                              shape      = MicroNN.Shape.Bool )
 
-microNN.AddLayer       ( dimensions = MicroNN.Init1D(shapesCount=2),
-                         shape      = MicroNN.Shape.Neuron,
-                         activation = MicroNN.GaussianActivation(),
-                         connStruct = MicroNN.FullyConnected )
+l2 = microNN.AddLayer       ( dimensions = MicroNN.Init1D(2),
+	                          shape      = MicroNN.Shape.Neuron,
+	                          activation = MicroNN.Activation.Gaussian,
+	                          connStruct = MicroNN.FullyConnected )
 
-microNN.AddOutputLayer ( dimensions = MicroNN.Init1D(shapesCount=1),
-                         shape      = MicroNN.Shape.Bool,
-                         activation = MicroNN.LeakyReLUActivation(),
-                         connStruct = MicroNN.FullyConnected )
+l3 = microNN.AddOutputLayer ( dimensions = MicroNN.Init1D(1),
+	                          shape      = MicroNN.Shape.Bool,
+	                          activation = MicroNN.Activation.Heaviside,
+	                          connStruct = MicroNN.FullyConnected )
+
+MicroNN.LogisticInitializer().InitWeights(l2)
+MicroNN.ReLUInitializer(xavier=False).InitWeights(l3)
 
 #microNN = MicroNN.LoadFromJSONFile('XOR.json')
 
@@ -31,7 +34,7 @@ microNN.AddExample( [True , True ], [False] )
 microNN.AddExample( [True , False], [True ] )
 microNN.LearnExamples()
 
-#microNN.SaveToJSONFile("XOR.json")
+microNN.SaveToJSONFile("XOR.json")
 
 print()
 print( "LEARNED :" )
