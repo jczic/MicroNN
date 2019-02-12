@@ -732,6 +732,7 @@ class MicroNN :
                       dimensions,
                       shape,
                       activation    = None,
+                      initializer   = None,
                       biasValue     = 1.0 ) :
             if type(self) is MicroNN.BaseLayer :
                 raise MicroNN.LayerException('"BaseLayer" is an abstract class and cannot be instancied.')
@@ -755,6 +756,8 @@ class MicroNN :
                                                   % (type(shape.ValueType).__name__, type(activation).__name__) )
             elif not isinstance(self, MicroNN.InputLayer) :
                 raise MicroNN.LayerException('"activation" must be defined for this layer type.')
+            if initializer is not None and not isinstance(initializer, MicroNN.Initializer) :
+                raise MicroNN.LayerException('"initializer" must be "None" or of Initializer type.')
             if parentMicroNN.Layers :
                 topLayer = parentMicroNN.Layers[len(parentMicroNN.Layers)-1]
             else :
@@ -770,7 +773,11 @@ class MicroNN :
             self._dimensions     = dimensions
             self._shape          = shape
             self._activation     = activation
+            self._initializer    = initializer
             self._topLayer       = topLayer
+            self._bottomLayer    = None
+            self._neurons        = None
+            self._inputConnCount = 0
             self._neuronsCount   = 0
             if not isinstance(self, MicroNN.InputLayer) :
                 if type(biasValue) not in (float, int) :
@@ -778,12 +785,128 @@ class MicroNN :
                 self._bias = MicroNN.Bias(index=-1, value=biasValue)
             else :
                 self._bias = None
+            if topLayer :
+                topLayer._bottomLayer = self
+            parentMicroNN.Layers.append(self)
+
+        # -[ Methods ]------------------------------------------
+
+        def InitWeights(self) :
+            if self._initializer :
+                self._initializer.InitWeights(self)
+
+        # ------------------------------------------------------
+
+        def GetNeuronByIndex(self, index) :
+            raise MicroNN.LayerException('"GetNeuronByIndex" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetNeuronsList(self) :
+            raise MicroNN.LayerException('"GetNeuronsList" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def ComputeInput(self) :
+            raise MicroNN.LayerException('"ComputeInput" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def ComputeOutput(self) :
+            raise MicroNN.LayerException('"ComputeOutput" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def ComputeErrorAndUpdateWeights(self) :
+            raise MicroNN.LayerException('"ComputeErrorAndUpdateWeights" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetOutputValues(self) :
+            raise MicroNN.LayerException('"GetOutputValues" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetMeanSquareError(self) :
+            raise MicroNN.LayerException('"GetMeanSquareError" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetMeanSquareErrorAsPercent(self) :
+            raise MicroNN.LayerException('"GetMeanSquareErrorAsPercent" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetMeanAbsoluteError(self) :
+            raise MicroNN.LayerException('"GetMeanAbsoluteError" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetMeanAbsoluteErrorAsPercent(self) :
+            raise MicroNN.LayerException('"GetMeanAbsoluteErrorAsPercent" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            raise MicroNN.LayerException('"GetAsDataObject" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        @staticmethod
+        def CreateFromDataObject(parentMicroNN, o) :
+            raise MicroNN.LayerException('Static method "CreateFromDataObject" must be overrided.')
+
+        # -[ Properties ]---------------------------------------
+
+        @property
+        def ParentMicroNN(self) :
+            return self._parentMicroNN
+
+        @property
+        def Dimensions(self) :
+            return self._dimensions
+
+        @property
+        def DimensionsCount(self) :
+            return len(self._dimensions)
+
+        @property
+        def Shape(self) :
+            return self._shape
+
+        @property
+        def Activation(self) :
+            return self._activation
+
+        @property
+        def TopLayer(self) :
+            return self._topLayer
+
+        @property
+        def Neurons(self) :
+            return self._neurons
+
+        @property
+        def NeuronsCount(self) :
+            return self._neuronsCount
+
+        @property
+        def InputConnectionsCount(self) :
+            return self._inputConnCount
+
+        @property
+        def BottomLayer(self) :
+            return self._bottomLayer
+
+        @property
+        def Bias(self) :
+            return self._bias
 
     # -------------------------------------------------------------------------
     # --( Class : Layer )------------------------------------------------------
     # -------------------------------------------------------------------------
 
-    class Layer :
+    class Layer(BaseLayer) :
 
         # -[ Constructor ]--------------------------------------
 
@@ -792,66 +915,25 @@ class MicroNN :
                       dimensions,
                       shape,
                       activation    = None,
+                      initializer   = None,
                       connStruct    = None,
                       biasValue     = 1.0 ) :
-            if not isinstance(parentMicroNN, MicroNN) :
-                raise MicroNN.LayerException('"parentMicroNN" must be of MicroNN type.')
-            if type(dimensions) not in (list, tuple) or len(dimensions) == 0 :
-                raise MicroNN.LayerException('"dimensions" must be a not empty list or tuple.')
-            for dimSize in dimensions :
-                if type(dimSize) is not int or dimSize <= 0 :
-                    raise MicroNN.LayerException('"dimensions" must contain only "int" types greater than zero.')
-            if not isinstance(shape, MicroNN.Shape) :
-                raise MicroNN.LayerException('"shape" must be of Shape type.')
-            if activation is not None :
-                if isinstance(self, MicroNN.InputLayer) :
-                    raise MicroNN.LayerException('"activation" must be "None" for an input layer.')
-                if not isinstance(activation, MicroNN.Activation) :
-                    raise MicroNN.LayerException('"activation" must be of Activation type.')
-                aMin, aMax = activation.GetRangeValues()
-                if aMax-aMin == inf and type(shape.ValueType) is not MicroNN.NeuronValueType :
-                    raise MicroNN.LayerException( 'Shape value type (%s) is not compatible with activation (%s).' 
-                                                  % (type(shape.ValueType).__name__, type(activation).__name__) )
-            elif not isinstance(self, MicroNN.InputLayer) :
-                raise MicroNN.LayerException('"activation" must be defined for this layer type.')
-            if parentMicroNN.Layers :
-                topLayer = parentMicroNN.Layers[len(parentMicroNN.Layers)-1]
-            else :
-                topLayer = None
-            if topLayer is not None :
-                if isinstance(self, MicroNN.InputLayer) :
-                    raise MicroNN.LayerException('No layer must be present to add this InputLayer type.')
-                if isinstance(topLayer, MicroNN.OutputLayer) :
-                    raise MicroNN.LayerException('No layer can be added after an OutputLayer type.')
+            super().__init__( parentMicroNN = parentMicroNN,
+                              dimensions    = dimensions,
+                              shape         = shape,
+                              activation    = activation,
+                              initializer   = initializer,
+                              biasValue     = biasValue )
+            if self._topLayer is not None :
                 if connStruct is None :
                     raise MicroNN.LayerException('"connStruct" must be defined for this layer type.')
                 if not isinstance(connStruct, MicroNN.ConnStruct) :
                     raise MicroNN.LayerException('"connStruct" must be of ConnStruct type.')
-            elif not isinstance(self, MicroNN.InputLayer) :
-                raise MicroNN.LayerException('Only an InputLayer type can be added as first layer.')
             elif connStruct is not None :
                 raise MicroNN.LayerException('"connStruct" must be "None" for this layer type.')
-            if not isinstance(biasValue, float) or biasValue < 0 or biasValue > 1 :
-                raise MicroNN.LayerException('"biasValue" must be of "float" type >= 0 and <= 1.')
-            self._parentMicroNN  = parentMicroNN
-            self._dimensions     = dimensions
-            self._shape          = shape
-            self._activation     = activation
-            self._topLayer       = topLayer
-            self._bottomLayer    = None
-            if not isinstance(self, MicroNN.InputLayer) :
-                if type(biasValue) not in (float, int) :
-                    raise MicroNN.LayerException('"biasValue" must be of "float" or "int" type.')
-                self._bias = MicroNN.Bias(index=-1, value=biasValue)
-            else :
-                self._bias = None
-            self._neuronsCount   = 0
             self._subDimNrnCount = self._getsubDimNrnCount()
             self._neurons        = self._recurCreateNeurons()
             self._inputConnCount = ( connStruct.ConnectLayer(self) if connStruct else 0 )
-            if topLayer :
-                topLayer._bottomLayer = self
-            parentMicroNN.Layers.append(self)
 
         # -[ Methods ]------------------------------------------
 
@@ -1092,69 +1174,23 @@ class MicroNN :
                     biasValue  = o['Bias']['Value']
                     connStruct = MicroNN.DataObjectConnStruct(o['Connections'])
                     if layerType == 'OutputLayer' :
-                        return MicroNN.OutputLayer( parentMicroNN,
-                                                    dims,
-                                                    shape,
-                                                    activation,
-                                                    connStruct,
-                                                    biasValue )
+                        return MicroNN.OutputLayer( parentMicroNN = parentMicroNN,
+                                                    dimensions    = dims,
+                                                    shape         = shape,
+                                                    activation    = activation,
+                                                    connStruct    = connStruct,
+                                                    biasValue     = biasValue )
                     elif layerType == 'Layer' :
-                        return MicroNN.Layer( parentMicroNN,
-                                              dims,
-                                              shape,
-                                              activation,
-                                              connStruct,
-                                              biasValue )
+                        return MicroNN.Layer( parentMicroNN = parentMicroNN,
+                                              dimensions    = dims,
+                                              shape         = shape,
+                                              activation    = activation,
+                                              connStruct    = connStruct,
+                                              biasValue     = biasValue )
                     else :
                         raise Exception()
-            except :
+            except Exception as ex:
                 raise MicroNN.LayerException('Data object is not valid.')
-
-        # -[ Properties ]---------------------------------------
-
-        @property
-        def ParentMicroNN(self) :
-            return self._parentMicroNN
-
-        @property
-        def Dimensions(self) :
-            return self._dimensions
-
-        @property
-        def DimensionsCount(self) :
-            return len(self._dimensions)
-
-        @property
-        def Shape(self) :
-            return self._shape
-
-        @property
-        def Activation(self) :
-            return self._activation
-
-        @property
-        def TopLayer(self) :
-            return self._topLayer
-
-        @property
-        def Neurons(self) :
-            return self._neurons
-
-        @property
-        def NeuronsCount(self) :
-            return self._neuronsCount
-
-        @property
-        def InputConnectionsCount(self) :
-            return self._inputConnCount
-
-        @property
-        def BottomLayer(self) :
-            return self._bottomLayer
-
-        @property
-        def Bias(self) :
-            return self._bias
 
     # -------------------------------------------------------------------------
     # --( Class : InputLayer )-------------------------------------------------
@@ -1247,7 +1283,6 @@ class MicroNN :
             self._overlappedShapesCount = overlappedShapesCount
             self._neurons               = None #...
             #...
-            parentMicroNN.Layers.append(self)
  
         # -[ Methods ]------------------------------------------
 
@@ -1971,12 +2006,14 @@ class MicroNN :
                   dimensions,
                   shape,
                   activation  = None,
+                  initializer = None,
                   connStruct  = None,
                   biasValue   = 1.0 ) :
         return MicroNN.Layer( parentMicroNN = self,
                               dimensions    = dimensions,
                               shape         = shape,
                               activation    = activation,
+                              initializer   = initializer,
                               connStruct    = connStruct,
                               biasValue     = biasValue )
 
@@ -1993,12 +2030,14 @@ class MicroNN :
                         dimensions,
                         shape,
                         activation  = None,
+                        initializer = None,
                         connStruct  = None,
                         biasValue   = 1.0 ) :
         return MicroNN.OutputLayer( parentMicroNN = self,
                                     dimensions    = dimensions,
                                     shape         = shape,
                                     activation    = activation,
+                                    initializer   = initializer,
                                     connStruct    = connStruct,
                                     biasValue     = biasValue )
 
@@ -2007,10 +2046,12 @@ class MicroNN :
     def AddQLearningOutputLayer(self, actionsCount) :
         if not isinstance(actionsCount, int) or actionsCount <= 1 :
             raise MicroNNException('"actionsCount" must be of "int" type greater than 1.')
+        initializer = MicroNN.LogisticInitializer(uniform=True, xavier=False)
         return MicroNN.OutputLayer( parentMicroNN = self,
                                     dimensions    = MicroNN.Init1D(actionsCount),
                                     shape         = MicroNN.ValueShape(),
                                     activation    = MicroNN.SoftMaxActivation(),
+                                    initializer   = initializer,
                                     connStruct    = MicroNN.FullyConnStruct() )
 
     # ------------------------------------------------------
@@ -2030,6 +2071,13 @@ class MicroNN :
             if isinstance(outputLayer, MicroNN.OutputLayer) :
                 return outputLayer
         return None
+
+    # ------------------------------------------------------
+
+    def InitWeights(self) :
+        self._ensureNetworkIsComplete()
+        for layer in self._layers :
+            layer.InitWeights()
 
     # ------------------------------------------------------
 
@@ -2141,10 +2189,10 @@ class MicroNN :
                     if verbose :
                         print( "MicroNN [ STEP : %s / SUCCESS : %s%% ]"
                                % ( count, round(successAvg*1000)/1000 ) )
-                    #if lastSuccessAvg > successAvg :
-                    #    return (successAvg >= MicroNN.MIN_LEARNED_SUCCESS_PERCENT)
                     if successAvg >= MicroNN.MIN_LEARNED_SUCCESS_PERCENT :
                         return True
+                    elif successAvg < lastSuccessAvg :
+                        return False
                     lastSuccessAvg = successAvg
         return False
 
