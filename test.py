@@ -9,13 +9,13 @@ l1 = microNN.AddInputLayer  ( dimensions  = MicroNN.Init1D(2),
 l2 = microNN.AddLayer       ( dimensions  = MicroNN.Init1D(2),
 	                          shape       = MicroNN.Shape.Neuron,
 	                          activation  = MicroNN.Activation.Gaussian,
-	                          initializer = MicroNN.LogisticInitializer(),
+	                          initializer = MicroNN.LogisticInitializer(MicroNN.Initializer.XavierNormal),
 	                          connStruct  = MicroNN.FullyConnected )
 
 l3 = microNN.AddOutputLayer ( dimensions  = MicroNN.Init1D(1),
 	                          shape       = MicroNN.Shape.Bool,
 	                          activation  = MicroNN.Activation.Heaviside,
-	                          initializer = MicroNN.ReLUInitializer(xavier=False),
+	                          initializer = MicroNN.ReLUInitializer(MicroNN.Initializer.HeNormal),
 	                          connStruct  = MicroNN.FullyConnected )
 
 microNN.InitWeights()

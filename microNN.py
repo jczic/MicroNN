@@ -1269,12 +1269,18 @@ class MicroNN :
                       shape,
                       kernelsCount,
                       overlappedShapesCount,
-                      activation = None,
-                      biasValue  = 1.0 ) :
+                      activation,
+                      initializer,
+                      biasValue    = 1.0 ) :
             if type(xSize) is not int or xSize <= 0 or \
                type(ySize) is not int or ySize <= 0 :
                 raise MicroNN.LayerException('"xSize" and "ySize" must be of "int" type greater than zero.')
-            super().__init__(parentMicroNN, [xSize, ySize], shape, activation, biasValue)
+            super().__init__( parentMicroNN = parentMicroNN,
+                              dimensions    = [xSize, ySize],
+                              shape         = shape,
+                              activation    = activation,
+                              initializer   = initializer,
+                              biasValue     = biasValue ) :
             if not isinstance(kernelsCount, int) or kernelsCount <= 0 :
                 raise MicroNN.LayerException('"kernelsCount" must be of "int" type greater than zero.')
             if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
@@ -1352,14 +1358,14 @@ class MicroNN :
 
     class LocallyConnStruct(ConnStruct) :
 
-        ROLE_INCREASE = 0x0A
-        ROLE_DECREASE = 0x0B
+        RoleIncrease = 0x0A
+        RoleDecrease = 0x0B
 
         # -[ Constructor ]--------------------------------------
 
         def __init__(self, role, overlappedShapesCount=0) :
             super().__init__()
-            if role != self.ROLE_INCREASE and role != self.ROLE_DECREASE :
+            if role != self.RoleIncrease and role != self.RoleDecrease :
                 raise MicroNN.ConnStructException('LocallyConnStruct : "role" is not a correct value.')
             if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
                 raise MicroNN.ConnStructException('LocallyConnStruct : "overlappedShapesCount" must be of "int" type >= zero.')
@@ -1384,7 +1390,7 @@ class MicroNN :
                                                              lowNeurons[lowIdx],
                                                              dimIdx+1 )
             else :
-                if self._role == self.ROLE_INCREASE :
+                if self._role == self.RoleIncrease :
                     srcNeurons = lowNeurons
                     dstNeurons = highNeurons
                 else :
@@ -1401,7 +1407,7 @@ class MicroNN :
         def ConnectLayer(self, layer) :
             if layer.DimensionsCount != layer.TopLayer.DimensionsCount :
                 raise MicroNN.ConnStructException('LocallyConnStruct : Both layers must have the same number of dimensions.')
-            if self._role == self.ROLE_INCREASE :
+            if self._role == self.RoleIncrease :
                 lowLayer  = layer.TopLayer
                 highLayer = layer
             else :
@@ -1855,13 +1861,22 @@ class MicroNN :
 
     class Initializer :
 
+        HeUniform      = 0x0A
+        HeNormal       = 0x0B
+        XavierUniform  = 0x0C
+        XavierNormal   = 0x0D
+
         # -[ Constructor ]--------------------------------------
 
-        def __init__(self, uniform=False, xavier=True) :
+        def __init__(self, initialization) :
             if type(self) is MicroNN.Initializer :
                 raise MicroNN.InitializerException('"Initializer" is an abstract class and cannot be instancied.')
-            self._uniform = uniform
-            self._xavier  = xavier
+            if initialization not in ( self.HeUniform,
+                                       self.HeNormal,
+                                       self.XavierUniform,
+                                       self.XavierNormal ) :
+                raise MicroNN.InitializerException('"initialization" is not correct.')
+            self._initialization = initialization
 
         # -[ Methods ]------------------------------------------
 
@@ -1887,16 +1902,14 @@ class MicroNN :
         def _applyDistribToWeights(self, layer, factor) :
             if not layer.TopLayer :
                 raise MicroNN.InitializerException('No top layer is present to initialize weights.')
-            x = layer.InputConnectionsCount
-            if self._xavier :
-                if not layer.BottomLayer :
-                    raise MicroNN.InitializerException('No bottom layer is present to use Xavier Initialization.')
-                x += layer.BottomLayer.InputConnectionsCount
-            if self._uniform :
-                limit   = factor * sqrt(6/x)
+            n = layer.TopLayer.NeuronsCount
+            if self._initialization in (self.XavierUniform, self.XavierNormal) :
+                n += layer.NeuronsCount
+            if self._initialization in (self.HeUniform, self.XavierUniform) :
+                limit   = factor * sqrt(6/n)
                 distrib = MicroNN.Initializer._uniformDistrib(layer.InputConnectionsCount, limit)
             else :
-                deviation = factor * sqrt(2/x)
+                deviation = factor * sqrt(2/n)
                 distrib   = MicroNN.Initializer._normalDistrib(layer.InputConnectionsCount, 0.0, deviation)
             i = 0
             for n in layer.GetNeuronsList() :
@@ -1913,12 +1926,8 @@ class MicroNN :
         # -[ Properties ]---------------------------------------
 
         @property
-        def Uniform(self) :
-            return self._uniform
-
-        @property
-        def Xavier(self) :
-            return self._xavier
+        def Initialization(self) :
+            return self._initialization
 
     # -------------------------------------------------------------------------
     # --( Class : LogisticInitializer )----------------------------------------
