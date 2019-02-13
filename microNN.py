@@ -1280,7 +1280,7 @@ class MicroNN :
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
-                              biasValue     = biasValue ) :
+                              biasValue     = biasValue )
             if not isinstance(kernelsCount, int) or kernelsCount <= 0 :
                 raise MicroNN.LayerException('"kernelsCount" must be of "int" type greater than zero.')
             if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
