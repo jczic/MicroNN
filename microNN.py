@@ -669,6 +669,11 @@ class MicroNN :
         @property
         def ComputedInput(self) :
             return self._computedInput
+        @ComputedInput.setter
+        def ComputedInput(self, value) :
+            if type(value) not in (float, int) :
+                raise MicroNN.NeuronException('"value" must be of "float" or "int" type.')
+            self._computedInput = float(value)
 
         @property
         def ComputedOutput(self) :
@@ -776,164 +781,19 @@ class MicroNN :
             self._initializer    = initializer
             self._topLayer       = topLayer
             self._bottomLayer    = None
-            self._neurons        = None
-            self._inputConnCount = 0
-            self._neuronsCount   = 0
-            if not isinstance(self, MicroNN.InputLayer) :
+            if not isinstance(self, MicroNN.InputLayer) and biasValue is not None :
                 if type(biasValue) not in (float, int) :
-                    raise MicroNN.LayerException('"biasValue" must be of "float" or "int" type.')
+                    raise MicroNN.LayerException('"biasValue" must be "None" or of "float" or "int" type.')
                 self._bias = MicroNN.Bias(index=-1, value=biasValue)
             else :
                 self._bias = None
+            self._subDimNrnCount = self._getsubDimNrnCount()
+            self._neuronsCount   = 0
+            self._neurons        = self._recurCreateNeurons()
+            self._inputConnCount = 0
             if topLayer :
                 topLayer._bottomLayer = self
             parentMicroNN.Layers.append(self)
-
-        # -[ Methods ]------------------------------------------
-
-        def InitWeights(self) :
-            if self._initializer :
-                self._initializer.InitWeights(self)
-
-        # ------------------------------------------------------
-
-        def GetNeuronByIndex(self, index) :
-            raise MicroNN.LayerException('"GetNeuronByIndex" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetNeuronsList(self) :
-            raise MicroNN.LayerException('"GetNeuronsList" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def ComputeInput(self) :
-            raise MicroNN.LayerException('"ComputeInput" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def ComputeOutput(self) :
-            raise MicroNN.LayerException('"ComputeOutput" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def ComputeErrorAndUpdateWeights(self) :
-            raise MicroNN.LayerException('"ComputeErrorAndUpdateWeights" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetOutputValues(self) :
-            raise MicroNN.LayerException('"GetOutputValues" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetMeanSquareError(self) :
-            raise MicroNN.LayerException('"GetMeanSquareError" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetMeanSquareErrorAsPercent(self) :
-            raise MicroNN.LayerException('"GetMeanSquareErrorAsPercent" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetMeanAbsoluteError(self) :
-            raise MicroNN.LayerException('"GetMeanAbsoluteError" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetMeanAbsoluteErrorAsPercent(self) :
-            raise MicroNN.LayerException('"GetMeanAbsoluteErrorAsPercent" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        def GetAsDataObject(self) :
-            raise MicroNN.LayerException('"GetAsDataObject" method must be implemented.')
-
-        # ------------------------------------------------------
-
-        @staticmethod
-        def CreateFromDataObject(parentMicroNN, o) :
-            raise MicroNN.LayerException('Static method "CreateFromDataObject" must be overrided.')
-
-        # -[ Properties ]---------------------------------------
-
-        @property
-        def ParentMicroNN(self) :
-            return self._parentMicroNN
-
-        @property
-        def Dimensions(self) :
-            return self._dimensions
-
-        @property
-        def DimensionsCount(self) :
-            return len(self._dimensions)
-
-        @property
-        def Shape(self) :
-            return self._shape
-
-        @property
-        def Activation(self) :
-            return self._activation
-
-        @property
-        def TopLayer(self) :
-            return self._topLayer
-
-        @property
-        def Neurons(self) :
-            return self._neurons
-
-        @property
-        def NeuronsCount(self) :
-            return self._neuronsCount
-
-        @property
-        def InputConnectionsCount(self) :
-            return self._inputConnCount
-
-        @property
-        def BottomLayer(self) :
-            return self._bottomLayer
-
-        @property
-        def Bias(self) :
-            return self._bias
-
-    # -------------------------------------------------------------------------
-    # --( Class : Layer )------------------------------------------------------
-    # -------------------------------------------------------------------------
-
-    class Layer(BaseLayer) :
-
-        # -[ Constructor ]--------------------------------------
-
-        def __init__( self,
-                      parentMicroNN,
-                      dimensions,
-                      shape,
-                      activation    = None,
-                      initializer   = None,
-                      connStruct    = None,
-                      biasValue     = 1.0 ) :
-            super().__init__( parentMicroNN = parentMicroNN,
-                              dimensions    = dimensions,
-                              shape         = shape,
-                              activation    = activation,
-                              initializer   = initializer,
-                              biasValue     = biasValue )
-            if self._topLayer is not None :
-                if connStruct is None :
-                    raise MicroNN.LayerException('"connStruct" must be defined for this layer type.')
-                if not isinstance(connStruct, MicroNN.ConnStruct) :
-                    raise MicroNN.LayerException('"connStruct" must be of ConnStruct type.')
-            elif connStruct is not None :
-                raise MicroNN.LayerException('"connStruct" must be "None" for this layer type.')
-            self._subDimNrnCount = self._getsubDimNrnCount()
-            self._neurons        = self._recurCreateNeurons()
-            self._inputConnCount = ( connStruct.ConnectLayer(self) if connStruct else 0 )
 
         # -[ Methods ]------------------------------------------
 
@@ -997,62 +857,23 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def _recurComputeInput(self, neurons, dimIdx=0) :
-            if dimIdx < self.DimensionsCount :
-                for i in range(self._dimensions[dimIdx]) :
-                    self._recurComputeInput(neurons[i], dimIdx+1)
-            else :
-                for i in range(self._shape.FlattenLen) :
-                    neurons[i].ComputeInput()
+        def InitWeights(self) :
+            raise MicroNN.LayerException('"InitWeights" method must be implemented.')
 
         # ------------------------------------------------------
 
         def ComputeInput(self) :
-            if isinstance(self, MicroNN.InputLayer) :
-                raise MicroNN.LayerException('An input layer cannot computes it input.')
-            self._recurComputeInput(self._neurons)
-            self._activation.OnLayerInputComputed(self)
-
-        # ------------------------------------------------------
-
-        def _recurComputeOutput(self, neurons, dimIdx=0) :
-            if dimIdx < self.DimensionsCount :
-                for i in range(self._dimensions[dimIdx]) :
-                    self._recurComputeOutput(neurons[i], dimIdx+1)
-            else :
-                for i in range(self._shape.FlattenLen) :
-                    neurons[i].ComputeOutput()
+            raise MicroNN.LayerException('"ComputeInput" method must be implemented.')
 
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
-            if isinstance(self, MicroNN.InputLayer) :
-                raise MicroNN.LayerException('An input layer cannot computes it output.')
-            self._recurComputeOutput(self._neurons)
-
-        # ------------------------------------------------------
-
-        def _recurComputeErrorAndUpdateWeights(self, neurons, computeError, dimIdx=0) :
-            if dimIdx < self.DimensionsCount :
-                for i in range(self._dimensions[dimIdx]) :
-                    self._recurComputeErrorAndUpdateWeights(neurons[i], computeError, dimIdx+1)
-            else :
-                for i in range(self._shape.FlattenLen) :
-                    if computeError :
-                        neurons[i].ComputeError()
-                    neurons[i].UpdateOutputWeights( self._parentMicroNN.ErrorCorrectionWeighting,
-                                                    self._parentMicroNN.ConnPlasticityStrengthing )
-
+            raise MicroNN.LayerException('"ComputeOutput" method must be implemented.')
 
         # ------------------------------------------------------
 
         def ComputeErrorAndUpdateWeights(self) :
-            if not isinstance(self, MicroNN.OutputLayer) :
-                computeError = (not isinstance(self, MicroNN.InputLayer))
-                self._recurComputeErrorAndUpdateWeights(self._neurons, computeError)
-            if self._bias :
-                self._bias.UpdateOutputWeights( self._parentMicroNN.ErrorCorrectionWeighting,
-                                                self._parentMicroNN.ConnPlasticityStrengthing )
+            raise MicroNN.LayerException('"ComputeErrorAndUpdateWeights" method must be implemented.')
 
         # ------------------------------------------------------
 
@@ -1140,14 +961,12 @@ class MicroNN :
         # ------------------------------------------------------
 
         def GetAsDataObject(self) :
-            if isinstance(self, MicroNN.InputLayer) :
-                activation = None
-                bias       = None
-                conns      = None
-            else :
-                activation = self._activation.GetAsDataObject()
-                bias       = { 'Value' : self._bias.Value }
-                conns      = self._recurGetConnsDataObject(self._neurons)
+            activation = self._activation.GetAsDataObject() \
+                         if self._activation else None
+            bias       = { 'Value' : self._bias.Value } \
+                         if self._bias else None
+            conns      = self._recurGetConnsDataObject(self._neurons) \
+                         if self.InputConnectionsCount > 0 else None
             return {
                 'Type'            : type(self).__name__,
                 'Dimensions'      : self._dimensions,
@@ -1170,9 +989,12 @@ class MicroNN :
                 if layerType == 'InputLayer' :
                     return MicroNN.InputLayer(parentMicroNN, dims, shape)
                 else :
-                    activation = MicroNN.Activation.CreateFromDataObject(o['Activation'])
-                    biasValue  = o['Bias']['Value']
-                    connStruct = MicroNN.DataObjectConnStruct(o['Connections'])
+                    activation = MicroNN.Activation.CreateFromDataObject(o['Activation']) \
+                                 if o['Activation'] else None
+                    connStruct = MicroNN.DataObjectConnStruct(o['Connections']) \
+                                 if o['Connections'] else None
+                    biasValue  = o['Bias']['Value'] \
+                                 if o['Bias'] else None
                     if layerType == 'OutputLayer' :
                         return MicroNN.OutputLayer( parentMicroNN = parentMicroNN,
                                                     dimensions    = dims,
@@ -1192,6 +1014,145 @@ class MicroNN :
             except Exception as ex:
                 raise MicroNN.LayerException('Data object is not valid.')
 
+        # -[ Properties ]---------------------------------------
+
+        @property
+        def ParentMicroNN(self) :
+            return self._parentMicroNN
+
+        @property
+        def Dimensions(self) :
+            return self._dimensions
+
+        @property
+        def DimensionsCount(self) :
+            return len(self._dimensions)
+
+        @property
+        def Shape(self) :
+            return self._shape
+
+        @property
+        def Activation(self) :
+            return self._activation
+
+        @property
+        def TopLayer(self) :
+            return self._topLayer
+
+        @property
+        def Neurons(self) :
+            return self._neurons
+
+        @property
+        def NeuronsCount(self) :
+            return self._neuronsCount
+
+        @property
+        def InputConnectionsCount(self) :
+            return self._inputConnCount
+
+        @property
+        def BottomLayer(self) :
+            return self._bottomLayer
+
+        @property
+        def Bias(self) :
+            return self._bias
+
+    # -------------------------------------------------------------------------
+    # --( Class : Layer )------------------------------------------------------
+    # -------------------------------------------------------------------------
+
+    class Layer(BaseLayer) :
+
+        # -[ Constructor ]--------------------------------------
+
+        def __init__( self,
+                      parentMicroNN,
+                      dimensions,
+                      shape,
+                      activation    = None,
+                      initializer   = None,
+                      connStruct    = None,
+                      biasValue     = 1.0 ) :
+            super().__init__( parentMicroNN = parentMicroNN,
+                              dimensions    = dimensions,
+                              shape         = shape,
+                              activation    = activation,
+                              initializer   = initializer,
+                              biasValue     = biasValue )
+            if self._topLayer is not None :
+                if connStruct is None :
+                    raise MicroNN.LayerException('"connStruct" must be defined for this layer type.')
+                if not isinstance(connStruct, MicroNN.ConnStruct) :
+                    raise MicroNN.LayerException('"connStruct" must be of ConnStruct type.')
+            elif connStruct is not None :
+                raise MicroNN.LayerException('"connStruct" must be "None" for this layer type.')
+            self._inputConnCount = ( connStruct.ConnectLayer(self) if connStruct else 0 )
+
+        # -[ Methods ]------------------------------------------
+
+        def InitWeights(self) :
+            if self._initializer :
+                self._initializer.InitWeights(self)
+
+        # ------------------------------------------------------
+
+        def _recurComputeInput(self, neurons, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurComputeInput(neurons[i], dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neurons[i].ComputeInput()
+
+        # ------------------------------------------------------
+
+        def ComputeInput(self) :
+            if isinstance(self, MicroNN.InputLayer) :
+                raise MicroNN.LayerException('An input layer cannot computes it input.')
+            self._recurComputeInput(self._neurons)
+            self._activation.OnLayerInputComputed(self)
+
+        # ------------------------------------------------------
+
+        def _recurComputeOutput(self, neurons, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurComputeOutput(neurons[i], dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neurons[i].ComputeOutput()
+
+        # ------------------------------------------------------
+
+        def ComputeOutput(self) :
+            if isinstance(self, MicroNN.InputLayer) :
+                raise MicroNN.LayerException('An input layer cannot computes it output.')
+            self._recurComputeOutput(self._neurons)
+
+        # ------------------------------------------------------
+
+        def _recurComputeErrorAndUpdateWeights(self, neurons, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurComputeErrorAndUpdateWeights(neurons[i], dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neurons[i].ComputeError()
+                    neurons[i].UpdateOutputWeights( self._parentMicroNN.ErrorCorrectionWeighting,
+                                                    self._parentMicroNN.ConnPlasticityStrengthing )
+
+
+        # ------------------------------------------------------
+
+        def ComputeErrorAndUpdateWeights(self) :
+            if not isinstance(self, MicroNN.OutputLayer) :
+                self._recurComputeErrorAndUpdateWeights(self._neurons)
+            if self._bias :
+                self._bias.UpdateOutputWeights( self._parentMicroNN.ErrorCorrectionWeighting,
+                                                self._parentMicroNN.ConnPlasticityStrengthing )
     # -------------------------------------------------------------------------
     # --( Class : InputLayer )-------------------------------------------------
     # -------------------------------------------------------------------------
@@ -1213,9 +1174,12 @@ class MicroNN :
                 for i in range(self._dimensions[dimIdx]) :
                     self._recurSetInputValues(neurons[i], values[i], dimIdx+1)
             else :
+                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
                 flattenValues = self._shape.Flatten(values)
                 for i in range(self._shape.FlattenLen) :
-                    neurons[i].ComputedOutput = flattenValues[i]*2 - 0.5
+                    if scaled :
+                        flattenValues[i] = flattenValues[i] * 2 - 1
+                    neurons[i].ComputedOutput = flattenValues[i]
 
         # ------------------------------------------------------
 
@@ -1238,12 +1202,12 @@ class MicroNN :
                 for i in range(self._dimensions[dimIdx]) :
                     self._recurComputeTargetError(neurons[i], targetValues[i], dimIdx+1)
             else :
-                scale = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
-                if scale :
+                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
+                if scaled :
                     aMin, aMax = self._activation.GetRangeValues()
                 flattenTargetValues = self._shape.Flatten(targetValues)
                 for i in range(self._shape.FlattenLen) :
-                    if scale :
+                    if scaled :
                         t = aMin + (flattenTargetValues[i] * (aMax-aMin))
                     else :
                         t = flattenTargetValues[i]
@@ -1264,33 +1228,107 @@ class MicroNN :
  
         def __init__( self,
                       parentMicroNN,
-                      xSize,
-                      ySize,
-                      shape,
-                      kernelsCount,
+                      filtersCount,
                       overlappedShapesCount,
+                      width,
+                      height,
+                      shape,
                       activation,
-                      initializer,
-                      biasValue    = 1.0 ) :
-            if type(xSize) is not int or xSize <= 0 or \
-               type(ySize) is not int or ySize <= 0 :
-                raise MicroNN.LayerException('"xSize" and "ySize" must be of "int" type greater than zero.')
+                      initializer ) :
+            if not isinstance(filtersCount, int) or filtersCount <= 0 :
+                raise MicroNN.LayerException('"filtersCount" must be of "int" type greater than zero.')
+            if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
+                raise MicroNN.LayerException('"overlappedShapesCount" must be of "int" type >= zero.')
+            if type(width)  is not int or width  <= 0 or \
+               type(height) is not int or height <= 0 :
+                raise MicroNN.LayerException('"width" and "height" must be of "int" type greater than zero.')
             super().__init__( parentMicroNN = parentMicroNN,
-                              dimensions    = [xSize, ySize],
+                              dimensions    = [width, height, filtersCount],
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
-                              biasValue     = biasValue )
-            if not isinstance(kernelsCount, int) or kernelsCount <= 0 :
-                raise MicroNN.LayerException('"kernelsCount" must be of "int" type greater than zero.')
-            if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
-                raise MicroNN.LayerException('"overlappedShapesCount" must be of "int" type >= zero.')
-            self._kernelsCount          = kernelsCount
+                              biasValue     = None )
+            if isinstance(self._topLayer, MicroNN.Conv2DLayer) :
+                self._inDepth = self._topLayer.Dimensions[2]
+            elif self._topLayer.DimensionsCount == 2 :
+                self._inDepth = None
+            else :
+                raise MicroNN.LayerException('2D convolution layer cannot be added after this top layer.')
+            self._inWidth               = self._topLayer.Dimensions[0]
+            self._inHeight              = self._topLayer.Dimensions[1]
+            self._outWidth              = width
+            self._outHeight             = height
+            self._filtersCount          = filtersCount
             self._overlappedShapesCount = overlappedShapesCount
-            self._neurons               = None #...
-            #...
+            if self._outWidth > self._inWidth or self._outHeight > self._inHeight :
+                raise MicroNN.LayerException('Layer 2D size (width x height) must be <= than top layer 2D size.')
+            self._winCountX   = ceil(self._inWidth  / self._outWidth)
+            self._winCountY   = ceil(self._inHeight / self._outHeight)
+            self._winWidth    = self._winCountX + (2 * self._overlappedShapesCount)
+            self._winHeight   = self._winCountY + (2 * self._overlappedShapesCount)
+            self._kernels     = [ ]
+            for i in range(filtersCount) :
+                kernel = MicroNN()
+                kernel.AddInputLayer  ( dimensions  = [ self._winWidth,
+                                                        self._winHeight,
+                                                        (self._inDepth if self._inDepth else 1) ],
+                                        shape       = self._topLayer.Shape )
+                kernel.AddOutputLayer ( dimensions  = [1],
+                                        shape       = shape,
+                                        activation  = activation,
+                                        initializer = initializer,
+                                        connStruct  = MicroNN.FullyConnected )
+                self._kernels.append(kernel)
  
         # -[ Methods ]------------------------------------------
+
+        def InitWeights(self) :
+            if self._initializer :
+                for kernel in self._kernels :
+                    kernel.InitWeights()
+
+        # ------------------------------------------------------
+
+        def ComputeInput(self) :
+            topLayerNeurons = self._topLayer.Neurons
+            for kernelIdx in range(len(self._kernels)) :
+                kernel        = self._kernels[kernelIdx]
+                kernelNeurons = kernel.GetInputLayer().Neurons
+                for outX in range(self._outWidth) :
+                    winStartX = (outX * self._winCountX) - self._overlappedShapesCount
+                    for outY in range(self._outHeight) :
+                        winStartY = (outY * self._winCountY) - self._overlappedShapesCount
+                        for winX in range(self._winWidth) :
+                            inX = winStartX + winX
+                            for winY in range(self._winHeight) :
+                                inY = winStartY + winY
+                                zeroPadding = ( inX < 0 or inX >= self._inWidth or \
+                                                inY < 0 or inY >= self._inHeight )
+                                if self._inDepth :
+                                    for depth in range(self._inDepth) :
+                                        for i in range(self._topLayer.Shape.FlattenLen) :
+                                            if not zeroPadding :
+                                                val = topLayerNeurons[inX][inY][depth][i].ComputedOutput
+                                            else :
+                                                val = 0.0
+                                            kernelNeurons[winX][winY][depth][i].ComputedInput = val
+                                else :
+                                    for i in range(self._topLayer.Shape.FlattenLen) :
+                                        if not zeroPadding :
+                                            val = topLayerNeurons[inX][inY][i].ComputedOutput
+                                        else :
+                                            val = 0.0
+                                        kernelNeurons[winX][winY][0][i].ComputedInput = val
+
+        # ------------------------------------------------------
+
+        def ComputeOutput(self) :
+            pass
+
+        # ------------------------------------------------------
+
+        def ComputeErrorAndUpdateWeights(self) :
+            pass
 
     # -------------------------------------------------------------------------
     # --( Class : ConnStructException )----------------------------------------
@@ -1365,7 +1403,7 @@ class MicroNN :
 
         def __init__(self, role, overlappedShapesCount=0) :
             super().__init__()
-            if role != self.RoleIncrease and role != self.RoleDecrease :
+            if role not in (self.RoleIncrease, self.RoleDecrease) :
                 raise MicroNN.ConnStructException('LocallyConnStruct : "role" is not a correct value.')
             if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
                 raise MicroNN.ConnStructException('LocallyConnStruct : "overlappedShapesCount" must be of "int" type >= zero.')
@@ -1379,7 +1417,7 @@ class MicroNN :
             if dimIdx < lowLayer.DimensionsCount :
                 for lowIdx in range(lowLayer.Dimensions[dimIdx]) :
                     di       = dimsInfo[dimIdx]
-                    winStart = int( (lowIdx+0.5)*di.ratio - di.ratio/2 ) - self._overlappedShapesCount
+                    winStart = (lowIdx * di.winCount) - self._overlappedShapesCount
                     for x in range(di.winSize) :
                         highIdx = winStart + x
                         if highIdx >= 0 and highIdx < highLayer.Dimensions[dimIdx] :
@@ -1419,9 +1457,9 @@ class MicroNN :
             for i in range(layer.DimensionsCount) :
                 if lowLayer.Dimensions[i] > highLayer.Dimensions[i] :
                     raise MicroNN.ConnStructException('LocallyConnStruct : The role is not suitable to the layers dimension(s).')
-                di         = dimInfo()
-                di.ratio   = highLayer.Dimensions[i] / lowLayer.Dimensions[i]
-                di.winSize = ceil(di.ratio) + (2 * self._overlappedShapesCount)
+                di          = dimInfo()
+                di.winCount = ceil(highLayer.Dimensions[i] / lowLayer.Dimensions[i])
+                di.winSize  = di.winCount + (2 * self._overlappedShapesCount)
                 dimsInfo.append(di)
             return self._recurConnect(highLayer, lowLayer, dimsInfo, highLayer.Neurons, lowLayer.Neurons)
 
@@ -2236,7 +2274,7 @@ class MicroNN :
             microNN.ErrorCorrectionWeighting  = o['ErrorCorrectionWeighting']
             microNN.ConnPlasticityStrengthing = o['ConnPlasticityStrengthing']
             for oLayer in o['Layers'] :
-                MicroNN.Layer.CreateFromDataObject(microNN, oLayer)
+                MicroNN.BaseLayer.CreateFromDataObject(microNN, oLayer)
             return microNN
         except :
             raise MicroNNException('Data object is not valid.')
