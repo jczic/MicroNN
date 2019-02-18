@@ -1319,11 +1319,23 @@ class MicroNN :
                                         else :
                                             val = 0.0
                                         kernelNeurons[winX][winY][0][i].ComputedInput = val
+                        for layer in kernel.Layers :
+                            if not isinstance(layer, MicroNN.InputLayer) :
+                                layer.ComputeInput()
+                                layer.ComputeOutput()
+                        for i in range(self._shape.FlattenLen) :
+                            kernelNrnOut = kernel.GetOutputLayer().Neurons[0][i]
+                            OutputNrnIn  = self._neurons[outX][outY][kernelIdx][i]
+                            OutputNrnIn.ComputedInput = kernelNrnOut.ComputedOutput
 
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
-            pass
+            for outX in range(self._outWidth) :
+                for outY in range(self._outHeight) :
+                    for depth in range(self._filtersCount) :
+                        for i in range(self._shape.FlattenLen) :
+                            self._neurons[outX][outY][depth][i].ComputeOutput()
 
         # ------------------------------------------------------
 
