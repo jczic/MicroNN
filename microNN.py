@@ -28,7 +28,7 @@ class MicroNN :
 
     VERSION                        = '1.0.0'
 
-    DEFAULT_LEARNING_RATE          = 0.30
+    DEFAULT_LEARNING_RATE          = 0.50
     DEFAULT_PLASTICITY_STRENGTHING = 0.75
 
     MIN_LEARNED_SUCCESS_PERCENT    = 99.5
@@ -618,7 +618,7 @@ class MicroNN :
         def ComputeOutput(self) :
             if not self._activation :
                 raise MicroNN.NeuronException('No activation available for this neuron.')
-            self._computedOutput = self._activation.Get(self)
+            self._computedOutput = self._activation.Apply(self)
 
         # ------------------------------------------------------
 
@@ -631,7 +631,7 @@ class MicroNN :
                     self._computedDeltaError += conn.NeuronDst._computedSignalError * conn.Weight
             if self._activation :
                 self._computedSignalError = self._computedDeltaError \
-                                          * self._activation.GetDerivative(self)
+                                          * self._activation.ApplyDerivative(self)
 
         # ------------------------------------------------------
 
@@ -871,8 +871,30 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def ComputeErrorAndUpdateWeights(self) :
-            raise MicroNN.LayerException('"ComputeErrorAndUpdateWeights" method must be implemented.')
+        def _recurComputeErrorAndUpdateOutputWeights(self, neurons, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurComputeErrorAndUpdateOutputWeights(neurons[i], dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neurons[i].ComputeError()
+                    neurons[i].UpdateOutputWeights( self._parentMicroNN.LearningRate,
+                                                    self._parentMicroNN.PlasticityStrengthing )
+
+
+        # ------------------------------------------------------
+
+        def ComputeErrorAndUpdateOutputWeights(self) :
+            self._recurComputeErrorAndUpdateOutputWeights(self._neurons)
+
+        # ------------------------------------------------------
+
+        def BackPropagateAndUpdateWeights(self) :
+            if self._bias :
+                self._bias.UpdateOutputWeights( self._parentMicroNN.LearningRate,
+                                                self._parentMicroNN.PlasticityStrengthing )
+            if self._topLayer :
+                self._topLayer.ComputeErrorAndUpdateOutputWeights()
 
         # ------------------------------------------------------
 
@@ -1010,7 +1032,7 @@ class MicroNN :
                                               biasValue     = biasValue )
                     else :
                         raise Exception()
-            except Exception as ex:
+            except :
                 raise MicroNN.LayerException('Data object is not valid.')
 
         # -[ Properties ]---------------------------------------
@@ -1131,27 +1153,6 @@ class MicroNN :
                 raise MicroNN.LayerException('An input layer cannot computes it output.')
             self._recurComputeOutput(self._neurons)
 
-        # ------------------------------------------------------
-
-        def _recurComputeErrorAndUpdateWeights(self, neurons, dimIdx=0) :
-            if dimIdx < self.DimensionsCount :
-                for i in range(self._dimensions[dimIdx]) :
-                    self._recurComputeErrorAndUpdateWeights(neurons[i], dimIdx+1)
-            else :
-                for i in range(self._shape.FlattenLen) :
-                    neurons[i].ComputeError()
-                    neurons[i].UpdateOutputWeights( self._parentMicroNN.LearningRate,
-                                                    self._parentMicroNN.PlasticityStrengthing )
-
-
-        # ------------------------------------------------------
-
-        def ComputeErrorAndUpdateWeights(self) :
-            if not isinstance(self, MicroNN.OutputLayer) :
-                self._recurComputeErrorAndUpdateWeights(self._neurons)
-            if self._bias :
-                self._bias.UpdateOutputWeights( self._parentMicroNN.LearningRate,
-                                                self._parentMicroNN.PlasticityStrengthing )
     # -------------------------------------------------------------------------
     # --( Class : InputLayer )-------------------------------------------------
     # -------------------------------------------------------------------------
@@ -1216,6 +1217,9 @@ class MicroNN :
 
         def ComputeTargetError(self, targetValues) :
             self._recurComputeTargetError(self._neurons, targetValues)
+            if self._bias :
+                self._bias.UpdateOutputWeights( self._parentMicroNN.LearningRate,
+                                                self._parentMicroNN.PlasticityStrengthing )
 
     # -------------------------------------------------------------------------
     # --( Class : Conv2DLayer )------------------------------------------------
@@ -1233,7 +1237,8 @@ class MicroNN :
                       height,
                       shape,
                       activation,
-                      initializer ) :
+                      initializer,
+                      biasValue = 1.0 ) :
             if not isinstance(filtersCount, int) or filtersCount <= 0 :
                 raise MicroNN.LayerException('"filtersCount" must be of "int" type greater than zero.')
             if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
@@ -1246,7 +1251,7 @@ class MicroNN :
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
-                              biasValue     = None )
+                              biasValue     = biasValue )
             if isinstance(self._topLayer, MicroNN.Conv2DLayer) :
                 self._inDepth = self._topLayer.Dimensions[2]
             elif self._topLayer.DimensionsCount == 2 :
@@ -1276,7 +1281,8 @@ class MicroNN :
                                         shape       = shape,
                                         activation  = activation,
                                         initializer = initializer,
-                                        connStruct  = MicroNN.FullyConnected )
+                                        connStruct  = MicroNN.FullyConnected,
+                                        biasValue   = None )
                 self._kernels.append(kernel)
  
         # -[ Methods ]------------------------------------------
@@ -1326,7 +1332,8 @@ class MicroNN :
                         kernelNrnOut = kernel.GetOutputLayer().Neurons[0]
                         OutputNrn    = self._neurons[outX][outY][kernelIdx]
                         for i in range(self._shape.FlattenLen) :
-                            OutputNrn[i].ComputedInput = kernelNrnOut[i].ComputedInput
+                            OutputNrn[i].ComputeInput()
+                            OutputNrn[i].ComputedInput += kernelNrnOut[i].ComputedInput
 
         # ------------------------------------------------------
 
@@ -1339,8 +1346,11 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def ComputeErrorAndUpdateWeights(self) :
-            pass
+        def BackPropagateAndUpdateWeights(self) :
+            if self._bias :
+                self._bias.UpdateOutputWeights( self._parentMicroNN.LearningRate,
+                                                self._parentMicroNN.PlasticityStrengthing )
+            # ...
 
     # -------------------------------------------------------------------------
     # --( Class : ConnStructException )----------------------------------------
@@ -1536,13 +1546,13 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def Get(self, neuron) :
-            raise MicroNN.ActivationException('"Get" method must be implemented.')
+        def Apply(self, neuron) :
+            raise MicroNN.ActivationException('"Apply" method must be implemented.')
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
-            raise MicroNN.ActivationException('"GetDerivative" method must be implemented.')
+        def ApplyDerivative(self, neuron) :
+            raise MicroNN.ActivationException('"ApplyDerivative" method must be implemented.')
 
         # ------------------------------------------------------
 
@@ -1595,12 +1605,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return neuron.ComputedInput
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             return 1.0
 
         # ------------------------------------------------------
@@ -1621,12 +1631,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return 0.0 if neuron.ComputedInput < 0 else 1.0
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             return 1.0
 
         # ------------------------------------------------------
@@ -1647,12 +1657,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return 1.0 / ( 1.0 + exp(-neuron.ComputedInput) )
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             f = neuron.ComputedOutput
             return f * (1.0-f)
 
@@ -1674,12 +1684,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return ( 2.0 / (1.0 + exp(-2.0 * neuron.ComputedInput)) ) - 1.0
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             f = neuron.ComputedOutput
             return 1.0 - f**2
 
@@ -1701,12 +1711,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return max(0.0, neuron.ComputedInput)
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             return 0.001 if neuron.ComputedInput < 0 else 1.0
 
         # ------------------------------------------------------
@@ -1735,12 +1745,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return max(self._alpha * neuron.ComputedInput, neuron.ComputedInput)
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             return self._alpha if neuron.ComputedInput < 0 else 1.0
 
         # ------------------------------------------------------
@@ -1780,12 +1790,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return log(1 + exp(neuron.ComputedInput))
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             return 1 / (1 + exp(-neuron.ComputedInput))
 
         # ------------------------------------------------------
@@ -1806,12 +1816,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return sin(neuron.ComputedInput)
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             return cos(neuron.ComputedInput)
 
         # ------------------------------------------------------
@@ -1832,12 +1842,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return exp(-neuron.ComputedInput**2)
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             f = neuron.ComputedOutput
             return -2 * neuron.ComputedInput * f
 
@@ -1879,12 +1889,12 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def Get(self, neuron) :
+        def Apply(self, neuron) :
             return self._layerNrnOutExps[neuron.Index] / self._expsSum
 
         # ------------------------------------------------------
 
-        def GetDerivative(self, neuron) :
+        def ApplyDerivative(self, neuron) :
             f = neuron.ComputedOutput
             return f * (1.0-f)
 
@@ -2340,11 +2350,11 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def _backPropagateError(self) :
+    def _backPropagateAndUpdateWeights(self) :
         self._ensureNetworkIsComplete()
         i = len(self._layers)-1
-        while i >= 0 :
-            self._layers[i].ComputeErrorAndUpdateWeights()
+        while i > 0 :
+            self._layers[i].BackPropagateAndUpdateWeights()
             i -= 1
 
     # ------------------------------------------------------
@@ -2358,7 +2368,7 @@ class MicroNN :
         if targetValues :
             self.GetOutputLayer().ComputeTargetError(targetValues)
             if training :
-                self._backPropagateError()
+                self._backPropagateAndUpdateWeights()
 
     # -[ Properties ]---------------------------------------
 
