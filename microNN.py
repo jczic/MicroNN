@@ -26,12 +26,12 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                             = '1.0.0'
+    VERSION                        = '1.0.0'
 
-    DEFAULT_ERROR_CORRECTION_WEIGHTING  = 0.30
-    DEFAULT_CONN_PLASTICITY_STRENGTHING = 0.75
+    DEFAULT_LEARNING_RATE          = 0.30
+    DEFAULT_PLASTICITY_STRENGTHING = 0.75
 
-    MIN_LEARNED_SUCCESS_PERCENT         = 99.5
+    MIN_LEARNED_SUCCESS_PERCENT    = 99.5
 
     # -------------------------------------------------------------------------
     # --( Class : ValueTypeException )-----------------------------------------
@@ -550,12 +550,12 @@ class MicroNN :
 
         # -[ Methods ]------------------------------------------
 
-        def UpdateWeight(self, errorCorrectionWeighting, connPlasticityStrengthing) :
-            deltaWeight                = errorCorrectionWeighting \
-                                       * self._neuronSrc.ComputedOutput \
-                                       * self._neuronDst.ComputedSignalError
+        def UpdateWeight(self, learningRate, plasticityStrengthing) :
+            deltaWeight                = learningRate \
+                                       * self._neuronDst.ComputedSignalError \
+                                       * self._neuronSrc.ComputedOutput
             self._weight              += deltaWeight \
-                                       + (connPlasticityStrengthing * self._momentumDeltaWeight)
+                                       + (plasticityStrengthing * self._momentumDeltaWeight)
             self._momentumDeltaWeight  = deltaWeight
 
         # -[ Properties ]---------------------------------------
@@ -612,7 +612,6 @@ class MicroNN :
             self._computedInput = 0.0
             for conn in self._inputConnections :
                 self._computedInput += conn.NeuronSrc.ComputedOutput * conn.Weight
-            self._computedInput = max(-250.0, min(250.0, self._computedInput))
 
         # ------------------------------------------------------
 
@@ -636,9 +635,9 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def UpdateOutputWeights(self, errorCorrectionWeighting, connPlasticityStrengthing) :
+        def UpdateOutputWeights(self, learningRate, plasticityStrengthing) :
             for conn in self._outputConnections :
-                conn.UpdateWeight(errorCorrectionWeighting, connPlasticityStrengthing)
+                conn.UpdateWeight(learningRate, plasticityStrengthing)
 
         # ------------------------------------------------------
 
@@ -1141,8 +1140,8 @@ class MicroNN :
             else :
                 for i in range(self._shape.FlattenLen) :
                     neurons[i].ComputeError()
-                    neurons[i].UpdateOutputWeights( self._parentMicroNN.ErrorCorrectionWeighting,
-                                                    self._parentMicroNN.ConnPlasticityStrengthing )
+                    neurons[i].UpdateOutputWeights( self._parentMicroNN.LearningRate,
+                                                    self._parentMicroNN.PlasticityStrengthing )
 
 
         # ------------------------------------------------------
@@ -1151,8 +1150,8 @@ class MicroNN :
             if not isinstance(self, MicroNN.OutputLayer) :
                 self._recurComputeErrorAndUpdateWeights(self._neurons)
             if self._bias :
-                self._bias.UpdateOutputWeights( self._parentMicroNN.ErrorCorrectionWeighting,
-                                                self._parentMicroNN.ConnPlasticityStrengthing )
+                self._bias.UpdateOutputWeights( self._parentMicroNN.LearningRate,
+                                                self._parentMicroNN.PlasticityStrengthing )
     # -------------------------------------------------------------------------
     # --( Class : InputLayer )-------------------------------------------------
     # -------------------------------------------------------------------------
@@ -1258,7 +1257,7 @@ class MicroNN :
             self._inHeight              = self._topLayer.Dimensions[1]
             self._outWidth              = width
             self._outHeight             = height
-            self._filtersCount          = filtersCount
+            self._outDepth              = filtersCount
             self._overlappedShapesCount = overlappedShapesCount
             if self._outWidth > self._inWidth or self._outHeight > self._inHeight :
                 raise MicroNN.LayerException('Layer 2D size (width x height) must be <= than top layer 2D size.')
@@ -1322,18 +1321,19 @@ class MicroNN :
                         for layer in kernel.Layers :
                             if not isinstance(layer, MicroNN.InputLayer) :
                                 layer.ComputeInput()
-                                layer.ComputeOutput()
+                                if not isinstance(layer, MicroNN.OutputLayer) :
+                                    layer.ComputeOutput()
+                        kernelNrnOut = kernel.GetOutputLayer().Neurons[0]
+                        OutputNrn    = self._neurons[outX][outY][kernelIdx]
                         for i in range(self._shape.FlattenLen) :
-                            kernelNrnOut = kernel.GetOutputLayer().Neurons[0][i]
-                            OutputNrnIn  = self._neurons[outX][outY][kernelIdx][i]
-                            OutputNrnIn.ComputedInput = kernelNrnOut.ComputedOutput
+                            OutputNrn[i].ComputedInput = kernelNrnOut[i].ComputedInput
 
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
             for outX in range(self._outWidth) :
                 for outY in range(self._outHeight) :
-                    for depth in range(self._filtersCount) :
+                    for depth in range(self._outDepth) :
                         for i in range(self._shape.FlattenLen) :
                             self._neurons[outX][outY][depth][i].ComputeOutput()
 
@@ -2019,10 +2019,10 @@ class MicroNN :
     # -[ Constructor ]--------------------------------------
 
     def __init__(self) :
-        self._errorCorrectionWeighting  = MicroNN.DEFAULT_ERROR_CORRECTION_WEIGHTING
-        self._connPlasticityStrengthing = MicroNN.DEFAULT_CONN_PLASTICITY_STRENGTHING
-        self._layers                    = [ ]
-        self._examples                  = [ ]
+        self._learningRate          = MicroNN.DEFAULT_LEARNING_RATE
+        self._plasticityStrengthing = MicroNN.DEFAULT_PLASTICITY_STRENGTHING
+        self._layers                = [ ]
+        self._examples              = [ ]
 
     # -[ Methods ]------------------------------------------
 
@@ -2261,12 +2261,12 @@ class MicroNN :
         self._ensureNetworkIsComplete()
         try :
             return {
-                'MicroNNVersion'            : MicroNN.VERSION,
-                'ErrorCorrectionWeighting'  : self._errorCorrectionWeighting,
-                'ConnPlasticityStrengthing' : self._connPlasticityStrengthing,
-                'LayersCount'               : len(self._layers),
-                'Layers'                    : [ l.GetAsDataObject()
-                                                for l in self._layers ]
+                'MicroNNVersion'        : MicroNN.VERSION,
+                'LearningRate'          : self._learningRate,
+                'PlasticityStrengthing' : self._plasticityStrengthing,
+                'LayersCount'           : len(self._layers),
+                'Layers'                : [ l.GetAsDataObject()
+                                            for l in self._layers ]
             }
         except :
             raise MicroNNException('Error to get neural network as data object.')
@@ -2282,9 +2282,9 @@ class MicroNN :
             raise MicroNNException( 'MicroNN version of data object (%s) is not valid for this version (%s).'
                                     % (oVer, MicroNN.VERSION) )
         try :
-            microNN                           = MicroNN()
-            microNN.ErrorCorrectionWeighting  = o['ErrorCorrectionWeighting']
-            microNN.ConnPlasticityStrengthing = o['ConnPlasticityStrengthing']
+            microNN                       = MicroNN()
+            microNN.LearningRate          = o['LearningRate']
+            microNN.PlasticityStrengthing = o['PlasticityStrengthing']
             for oLayer in o['Layers'] :
                 MicroNN.BaseLayer.CreateFromDataObject(microNN, oLayer)
             return microNN
@@ -2363,22 +2363,22 @@ class MicroNN :
     # -[ Properties ]---------------------------------------
 
     @property
-    def ErrorCorrectionWeighting(self) :
-        return self._errorCorrectionWeighting
-    @ErrorCorrectionWeighting.setter
-    def ErrorCorrectionWeighting(self, value) :
+    def LearningRate(self) :
+        return self._learningRate
+    @LearningRate.setter
+    def LearningRate(self, value) :
         if type(value) not in (float, int) :
             raise MicroNNException('"value" must be of "float" or "int" type.')
-        self._errorCorrectionWeighting = float(value)
+        self._learningRate = float(value)
 
     @property
-    def ConnPlasticityStrengthing(self) :
-        return self._connPlasticityStrengthing
-    @ConnPlasticityStrengthing.setter
-    def ConnPlasticityStrengthing(self, value) :
+    def PlasticityStrengthing(self) :
+        return self._plasticityStrengthing
+    @PlasticityStrengthing.setter
+    def PlasticityStrengthing(self, value) :
         if type(value) not in (float, int) :
             raise MicroNNException('"value" must be of "float" or "int" type.')
-        self._connPlasticityStrengthing = float(value)
+        self._plasticityStrengthing = float(value)
 
     @property
     def Layers(self) :
