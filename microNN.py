@@ -1242,7 +1242,7 @@ class MicroNN :
                       shape,
                       activation,
                       initializer,
-                      kernelsBiasValue = 1.0 ) :
+                      biasValue = 1.0 ) :
             if not isinstance(filtersCount, int) or filtersCount <= 0 :
                 raise MicroNN.LayerException('"filtersCount" must be of "int" type greater than zero.')
             if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
@@ -1250,14 +1250,12 @@ class MicroNN :
             if type(width)  is not int or width  <= 0 or \
                type(height) is not int or height <= 0 :
                 raise MicroNN.LayerException('"width" and "height" must be of "int" type greater than zero.')
-            if kernelsBiasValue is not None and type(kernelsBiasValue) not in (float, int) :
-                raise MicroNN.LayerException('"kernelsBiasValue" must be "None" or of "float" or "int" type.')
             super().__init__( parentMicroNN = parentMicroNN,
                               dimensions    = [width, height, filtersCount],
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
-                              biasValue     = None )
+                              biasValue     = biasValue )
             if isinstance(self._topLayer, MicroNN.Conv2DLayer) :
                 self._inDepth = self._topLayer.Dimensions[2]
             elif self._topLayer.DimensionsCount == 2 :
@@ -1269,6 +1267,9 @@ class MicroNN :
             self._outWidth              = width
             self._outHeight             = height
             self._outDepth              = filtersCount
+            self._out2DNeuronsCount     = self._outWidth  \
+                                        * self._outHeight \
+                                        * self._shape.FlattenLen
             self._overlappedShapesCount = overlappedShapesCount
             if self._outWidth > self._inWidth or self._outHeight > self._inHeight :
                 raise MicroNN.LayerException('Layer 2D size (width x height) must be <= than top layer 2D size.')
@@ -1290,7 +1291,7 @@ class MicroNN :
                                         activation  = activation,
                                         initializer = initializer,
                                         connStruct  = MicroNN.FullyConnected,
-                                        biasValue   = kernelsBiasValue )
+                                        biasValue   = None )
                 self._kernels.append(kernel)
  
         # -[ Methods ]------------------------------------------
@@ -1328,7 +1329,7 @@ class MicroNN :
                                                 val = topLayerNrnXY[depth][i].Output
                                             else :
                                                 val = 0.0
-                                            kernelInNrnXY[depth][i].Input       = val
+                                            kernelInNrnXY[depth][i].Output      = val
                                             kernelInNrnXY[depth][i].TotalOutput = 0.0
                                 else :
                                     for i in range(self._topLayer.Shape.FlattenLen) :
@@ -1336,12 +1337,12 @@ class MicroNN :
                                             val = topLayerNrnXY[i].Output
                                         else :
                                             val = 0.0
-                                        kernelInNrnXY[0][i].Input       = val
+                                        kernelInNrnXY[0][i].Output      = val
                                         kernelInNrnXY[0][i].TotalOutput = 0.0
                         kernelOutLayer.ComputeInput()
                         for i in range(self._shape.FlattenLen) :
-                            outputNrn[i].Error          = 0.0
-                            outputNrn[i].Input          = kernelOutNrn[i].Input
+                            outputNrn[i].ComputeInput()
+                            outputNrn[i].Input += kernelOutNrn[i].Input
                             kernelOutNrn[i].TotalSigErr = 0.0
 
         # ------------------------------------------------------
@@ -1356,6 +1357,7 @@ class MicroNN :
         # ------------------------------------------------------
 
         def BackPropagateAndUpdateWeights(self) :
+            super().BackPropagateAndUpdateWeights()
             for kernelIdx in range(len(self._kernels)) :
                 kernel         = self._kernels[kernelIdx]
                 kernelInLayer  = kernel.GetInputLayer()
@@ -1390,13 +1392,10 @@ class MicroNN :
                                         for i in range(self._topLayer.Shape.FlattenLen) :
                                             topLayerNrnXY[i].Error          += kernelInNrnXY[0][i].Error
                                             kernelInNrnXY[0][i].TotalOutput += topLayerNrnXY[i].Output
-                if kernelOutLayer.Bias :
-                    kernelOutLayer.Bias.TotalOutput = kernelOutLayer.Bias.Value \
-                                                    * kernelInLayer.NeuronsCount
                 for i in range(self._shape.FlattenLen) :
                     for conn in kernelOutNrn[i].InputConnections :
-                        conn.UpdateWeightFromOutput( kernelOutNrn[i].TotalSigErr,
-                                                     conn.NeuronSrc.TotalOutput,
+                        conn.UpdateWeightFromOutput( kernelOutNrn[i].TotalSigErr / self._out2DNeuronsCount,
+                                                     conn.NeuronSrc.TotalOutput  / self._out2DNeuronsCount,
                                                      kernel.LearningRate,
                                                      kernel.PlasticityStrengthing )
 
