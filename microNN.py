@@ -28,8 +28,8 @@ class MicroNN :
 
     VERSION                        = '1.0.0'
 
-    DEFAULT_LEARNING_RATE          = 0.50
-    DEFAULT_PLASTICITY_STRENGTHING = 0.75
+    DEFAULT_LEARNING_RATE          = 0.60
+    DEFAULT_PLASTICITY_STRENGTHING = 0.35
 
     MIN_LEARNED_SUCCESS_PERCENT    = 99.5
 
@@ -202,7 +202,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def FromAnalog(self, value) :
-            return bool(super().FromAnalog(value))
+            return (super().FromAnalog(value) > 0.5)
 
         # ------------------------------------------------------
 
@@ -1172,12 +1172,9 @@ class MicroNN :
                 for i in range(self._dimensions[dimIdx]) :
                     self._recurSetInputValues(neurons[i], values[i], dimIdx+1)
             else :
-                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
                 flattenValues = self._shape.Flatten(values)
                 for i in range(self._shape.FlattenLen) :
-                    if scaled :
-                        flattenValues[i] = flattenValues[i] * 2 - 1
-                    neurons[i].Output = flattenValues[i]
+                    neurons[i].Output = flattenValues[i] * 2 - 1
 
         # ------------------------------------------------------
 
@@ -2029,7 +2026,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def InitWeights(self, layer) :
-            self._applyDistribToWeights(layer, factor=1)
+            self._applyDistribToWeights(layer, factor=1.0)
 
     # -------------------------------------------------------------------------
     # --( Class : TanHInitializer )--------------------------------------------
@@ -2040,7 +2037,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def InitWeights(self, layer) :
-            self._applyDistribToWeights(layer, factor=4)
+            self._applyDistribToWeights(layer, factor=5/3)
 
     # -------------------------------------------------------------------------
     # --( Class : ReLUInitializer )--------------------------------------------
@@ -2146,7 +2143,7 @@ class MicroNN :
     def AddQLearningOutputLayer(self, actionsCount) :
         if not isinstance(actionsCount, int) or actionsCount <= 1 :
             raise MicroNNException('"actionsCount" must be of "int" type greater than 1.')
-        initializer = MicroNN.LogisticInitializer(uniform=True, xavier=False)
+        initializer = MicroNN.LogisticInitializer(MicroNN.Initializer.HeUniform)
         return MicroNN.OutputLayer( parentMicroNN = self,
                                     dimensions    = MicroNN.Init1D(actionsCount),
                                     shape         = MicroNN.ValueShape(),
