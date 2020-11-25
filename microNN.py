@@ -28,8 +28,8 @@ class MicroNN :
 
     VERSION                        = '1.0.0'
 
-    DEFAULT_LEARNING_RATE          = 0.50
-    DEFAULT_PLASTICITY_STRENGTHING = 0.75
+    DEFAULT_LEARNING_RATE          = 0.60
+    DEFAULT_PLASTICITY_STRENGTHING = 0.35
 
     MIN_LEARNED_SUCCESS_PERCENT    = 99.5
 
@@ -202,7 +202,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def FromAnalog(self, value) :
-            return bool(super().FromAnalog(value))
+            return (super().FromAnalog(value) > 0.5)
 
         # ------------------------------------------------------
 
@@ -623,6 +623,8 @@ class MicroNN :
             self._input = 0.0
             for conn in self._inputConnections :
                 self._input += conn.NeuronSrc.Output * conn.Weight
+            if self._input != 0 :
+                self._input /= self.InputConnectionsCount
 
         # ------------------------------------------------------
 
@@ -771,10 +773,6 @@ class MicroNN :
                     raise MicroNN.LayerException('"activation" must be "None" for an input layer.')
                 if not isinstance(activation, MicroNN.Activation) :
                     raise MicroNN.LayerException('"activation" must be of Activation type.')
-                aMin, aMax = activation.GetRangeValues()
-                if aMax-aMin == inf and type(shape.ValueType) is not MicroNN.NeuronValueType :
-                    raise MicroNN.LayerException( 'Shape value type (%s) is not compatible with activation (%s).' 
-                                                  % (type(shape.ValueType).__name__, type(activation).__name__) )
             elif not isinstance(self, MicroNN.InputLayer) :
                 raise MicroNN.LayerException('"activation" must be defined for this layer type.')
             if initializer is not None and not isinstance(initializer, MicroNN.Initializer) :
@@ -911,16 +909,9 @@ class MicroNN :
                     dim.append(self._recurGetOutputValues(neurons[i], dimIdx+1))
                 return dim
             else :
-                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
-                if scaled :
-                    aMin, aMax = self._activation.GetRangeValues()
                 flattenValues = [ ]
                 for i in range(self._shape.FlattenLen) :
-                    if scaled :
-                        v = float(neurons[i].Output-aMin) / (aMax-aMin)
-                    else :
-                        v = neurons[i].Output
-                    flattenValues.append(v)
+                    flattenValues.append(neurons[i].Output)
                 return self._shape.Unflatten(flattenValues)
 
         # ------------------------------------------------------
@@ -1181,12 +1172,9 @@ class MicroNN :
                 for i in range(self._dimensions[dimIdx]) :
                     self._recurSetInputValues(neurons[i], values[i], dimIdx+1)
             else :
-                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
                 flattenValues = self._shape.Flatten(values)
                 for i in range(self._shape.FlattenLen) :
-                    if scaled :
-                        flattenValues[i] = flattenValues[i] * 2 - 1
-                    neurons[i].Output = flattenValues[i]
+                    neurons[i].Output = flattenValues[i] * 2 - 1
 
         # ------------------------------------------------------
 
@@ -1209,16 +1197,9 @@ class MicroNN :
                 for i in range(self._dimensions[dimIdx]) :
                     self._recurComputeTargetError(neurons[i], targetValues[i], dimIdx+1)
             else :
-                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
-                if scaled :
-                    aMin, aMax = self._activation.GetRangeValues()
                 flattenTargetValues = self._shape.Flatten(targetValues)
                 for i in range(self._shape.FlattenLen) :
-                    if scaled :
-                        t = aMin + (flattenTargetValues[i] * (aMax-aMin))
-                    else :
-                        t = flattenTargetValues[i]
-                    neurons[i].SetErrorFromTarget(t)
+                    neurons[i].SetErrorFromTarget(flattenTargetValues[i])
 
         # ------------------------------------------------------
 
@@ -2045,7 +2026,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def InitWeights(self, layer) :
-            self._applyDistribToWeights(layer, factor=1)
+            self._applyDistribToWeights(layer, factor=1.0)
 
     # -------------------------------------------------------------------------
     # --( Class : TanHInitializer )--------------------------------------------
@@ -2056,7 +2037,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def InitWeights(self, layer) :
-            self._applyDistribToWeights(layer, factor=4)
+            self._applyDistribToWeights(layer, factor=5/3)
 
     # -------------------------------------------------------------------------
     # --( Class : ReLUInitializer )--------------------------------------------
@@ -2162,7 +2143,7 @@ class MicroNN :
     def AddQLearningOutputLayer(self, actionsCount) :
         if not isinstance(actionsCount, int) or actionsCount <= 1 :
             raise MicroNNException('"actionsCount" must be of "int" type greater than 1.')
-        initializer = MicroNN.LogisticInitializer(uniform=True, xavier=False)
+        initializer = MicroNN.LogisticInitializer(MicroNN.Initializer.HeUniform)
         return MicroNN.OutputLayer( parentMicroNN = self,
                                     dimensions    = MicroNN.Init1D(actionsCount),
                                     shape         = MicroNN.ValueShape(),
