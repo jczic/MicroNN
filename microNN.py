@@ -1997,11 +1997,11 @@ class MicroNN :
 
         @staticmethod
         def _normalDistrib(count, mean, deviation) :
-            values = MicroNN.Initializer._uniformDistrib(count, 0.5)
+            values = MicroNN.Initializer._uniformDistrib(count, 1.0)
             a      = 1 / (deviation * sqrt(2*pi))
-            b      = 2 * deviation**2
+            b      = (2 * deviation) ** 2
             for i in range(len(values)) :
-                values[i] = a * exp( -( (values[i]-mean)**2 / b ) )
+                values[i] = a * exp( -( (values[i]-mean) ** 2 / b ) )
             return values
 
         # ------------------------------------------------------
@@ -2277,10 +2277,14 @@ class MicroNN :
     # ------------------------------------------------------
 
     def LearnExamples( self,
+                       batchSize    = 100,
                        maxSeconds   = None,
                        maxLearnings = None,
                        verbose      = True ) :
         self._ensureNetworkIsComplete()
+        if batchSize is not None :
+            if not isinstance(batchSize, int) or batchSize <= 0 :
+                raise MicroNNException('"batchSize" must be of "int" type greater than zero.')
         if maxSeconds is not None :
             if not isinstance(maxSeconds, int) or maxSeconds <= 0 :
                 raise MicroNNException('"maxSeconds" must be of "int" type greater than zero.')
@@ -2289,6 +2293,7 @@ class MicroNN :
                 raise MicroNNException('"maxLearnings" must be of "int" type greater than zero.')
         examplesCount = len(self._examples)
         count         = 0
+        batch         = 0
         if examplesCount > 0 :
             endTime        = (time() + maxSeconds) if maxSeconds else None
             lastSuccessAvg = -2**24
@@ -2297,14 +2302,15 @@ class MicroNN :
                 ex = self._examples[count % examplesCount]
                 self.Learn(ex[0], ex[1])
                 count += 1
-                if count % examplesCount == 0 :
+                if count % (batchSize*examplesCount) == 0 :
+                    batch += 1
                     successAvg = 0.0
                     for ex in self._examples :
                         successAvg += self.Test(ex[0], ex[1])
                     successAvg /= examplesCount
                     if verbose :
-                        print( "MicroNN [ STEP : %s / SUCCESS : %s%% ]"
-                               % ( count, round(successAvg*1000)/1000 ) )
+                        print( "MicroNN [ STEP : %s / BATCH : %s / SUCCESS : %s%% ]"
+                               % ( count, batch, round(successAvg*1000)/1000 ) )
                     if successAvg >= MicroNN.MIN_LEARNED_SUCCESS_PERCENT :
                         return True
                     elif successAvg < lastSuccessAvg :
