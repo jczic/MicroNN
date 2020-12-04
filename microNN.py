@@ -6,12 +6,8 @@ Copyright © 2019 Jean-Christophe Bos & HC² (www.hc2.fr)
 
 from   math import inf, sqrt, pi, exp, ceil, log, sin, cos
 from   time import time
+import random
 import json
-
-try :
-    from random  import random
-except :
-    from machine import rng
 
 # -------------------------------------------------------------------------
 # --( Class : MicroNNException )-------------------------------------------
@@ -26,10 +22,10 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                        = '1.0.2'
+    VERSION                        = '1.0.3'
 
-    DEFAULT_LEARNING_RATE          = 0.66
-    DEFAULT_PLASTICITY_STRENGTHING = 0.33
+    DEFAULT_LEARNING_RATE          = 0.3
+    DEFAULT_PLASTICITY_STRENGTHING = 0.2
 
     MIN_LEARNED_SUCCESS_PERCENT    = 99.5
 
@@ -555,19 +551,19 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def UpdateWeightFromOutput(self, signalError, output, learningRate, plasticityStrengthing) :
-            deltaWeight                = learningRate * signalError * output
-            self._weight              += deltaWeight \
+        def UpdateWeightFromValue(self, signalError, value, learningRate, plasticityStrengthing) :
+            deltaWeight                = learningRate * signalError * value
+            self._weight              -= deltaWeight \
                                        + (plasticityStrengthing * self._momentumDeltaWeight)
             self._momentumDeltaWeight  = deltaWeight
 
         # ------------------------------------------------------
 
         def UpdateWeight(self, signalError, learningRate, plasticityStrengthing) :
-            self.UpdateWeightFromOutput( signalError,
-                                         self._neuronSrc.Output,
-                                         learningRate,
-                                         plasticityStrengthing )
+            self.UpdateWeightFromValue( signalError,
+                                        self._neuronSrc.Output,
+                                        learningRate,
+                                        plasticityStrengthing )
 
         # -[ Properties ]---------------------------------------
 
@@ -636,7 +632,7 @@ class MicroNN :
         def SetErrorFromTarget(self, targetValue) :
             if type(targetValue) not in (float, int) :
                 raise MicroNN.NeuronException('"targetValue" must be of "float" or "int" type.')
-            self._error = float(targetValue) - self._output
+            self._error = self._output - float(targetValue)
 
         # ------------------------------------------------------
 
@@ -1394,10 +1390,10 @@ class MicroNN :
                                             kernelInNrnXY[0][i].TotalOutput += topLayerNrnXY[i].Output
                 for i in range(self._shape.FlattenLen) :
                     for conn in kernelOutNrn[i].InputConnections :
-                        conn.UpdateWeightFromOutput( kernelOutNrn[i].TotalSigErr / self._out2DNeuronsCount,
-                                                     conn.NeuronSrc.TotalOutput  / self._out2DNeuronsCount,
-                                                     kernel.LearningRate,
-                                                     kernel.PlasticityStrengthing )
+                        conn.UpdateWeightFromValue( kernelOutNrn[i].TotalSigErr / self._out2DNeuronsCount,
+                                                    conn.NeuronSrc.TotalOutput  / self._out2DNeuronsCount,
+                                                    kernel.LearningRate,
+                                                    kernel.PlasticityStrengthing )
 
     # -------------------------------------------------------------------------
     # --( Class : ConnStructException )----------------------------------------
@@ -1990,7 +1986,7 @@ class MicroNN :
         @staticmethod
         def _uniformDistrib(count, limit) :
             delta = 2 * limit
-            return [ (MicroNN.RandomFloat() * delta) - limit
+            return [ (random.random() * delta) - limit
                      for i in range(count) ]
 
         # ------------------------------------------------------
@@ -2009,21 +2005,24 @@ class MicroNN :
         def _applyDistribToWeights(self, layer, factor) :
             if not layer.TopLayer :
                 raise MicroNN.InitializerException('No top layer is present to initialize weights.')
-            n = layer.TopLayer.NeuronsCount
+            n     = layer.TopLayer.NeuronsCount
+            count = layer.InputConnectionsCount
+            if layer.Bias :
+                n     += 1
+                count += layer.Bias.OutputConnectionsCount
             if self._initialization in (self.XavierUniform, self.XavierNormal) :
                 n += layer.NeuronsCount
             if self._initialization in (self.HeUniform, self.XavierUniform) :
                 limit   = factor * sqrt(6/n)
-                distrib = MicroNN.Initializer._uniformDistrib(layer.InputConnectionsCount, limit)
+                distrib = MicroNN.Initializer._uniformDistrib(count, limit)
             else :
                 deviation = factor * sqrt(2/n)
-                distrib   = MicroNN.Initializer._normalDistrib(layer.InputConnectionsCount, 0.0, deviation)
+                distrib   = MicroNN.Initializer._normalDistrib(count, 0.0, deviation)
             i = 0
             for n in layer.GetNeuronsList() :
                 for c in n.InputConnections :
-                    if not isinstance(c.NeuronSrc, MicroNN.Bias) :
-                        c.Weight = distrib[i]
-                        i += 1
+                    c.Weight = distrib[i]
+                    i += 1
 
         # ------------------------------------------------------
 
@@ -2082,14 +2081,6 @@ class MicroNN :
         self._examples              = [ ]
 
     # -[ Methods ]------------------------------------------
-
-    @staticmethod
-    def RandomFloat() :
-        if 'rng' in globals() :
-            return rng() / (2 ** 24)
-        return random()
-
-    # ------------------------------------------------------
 
     @staticmethod
     def Init1D(shapesCount) :
@@ -2313,9 +2304,12 @@ class MicroNN :
                                % ( count, batch, round(successAvg*1000)/1000 ) )
                     if successAvg >= MicroNN.MIN_LEARNED_SUCCESS_PERCENT :
                         return True
+                    '''
                     elif successAvg < lastSuccessAvg :
                         return False
+                    '''
                     lastSuccessAvg = successAvg
+                    random.shuffle(self._examples)
         return False
 
     # ------------------------------------------------------
