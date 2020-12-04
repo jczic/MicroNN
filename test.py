@@ -1,4 +1,4 @@
-
+﻿
 from microNN import MicroNN
 
 microNN = MicroNN()
@@ -7,16 +7,16 @@ l1 = microNN.AddInputLayer  ( dimensions  = MicroNN.Init1D(2),
                               shape       = MicroNN.Shape.Bool )
 
 l2 = microNN.AddLayer       ( dimensions  = MicroNN.Init1D(2),
-	                          shape       = MicroNN.Shape.Neuron,
-	                          activation  = MicroNN.Activation.Gaussian,
-	                          initializer = MicroNN.LogisticInitializer(MicroNN.Initializer.HeUniform),
-	                          connStruct  = MicroNN.FullyConnected )
+                              shape       = MicroNN.Shape.Neuron,
+                              activation  = MicroNN.Activation.Gaussian,
+                              initializer = MicroNN.LogisticInitializer(MicroNN.Initializer.HeUniform),
+                              connStruct  = MicroNN.FullyConnected )
 
 l3 = microNN.AddOutputLayer ( dimensions  = MicroNN.Init1D(1),
-	                          shape       = MicroNN.Shape.Bool,
-	                          activation  = MicroNN.Activation.Heaviside,
-	                          initializer = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
-	                          connStruct  = MicroNN.FullyConnected )
+                              shape       = MicroNN.Shape.Bool,
+                              activation  = MicroNN.Activation.Heaviside,
+                              initializer = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
+                              connStruct  = MicroNN.FullyConnected )
 
 microNN.InitWeights()
 
