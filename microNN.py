@@ -22,12 +22,10 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                        = '1.0.3'
+    VERSION                        = '1.0.5'
 
-    DEFAULT_LEARNING_RATE          = 0.3
-    DEFAULT_PLASTICITY_STRENGTHING = 0.2
-
-    MIN_LEARNED_SUCCESS_PERCENT    = 99.5
+    DEFAULT_LEARNING_RATE          = 1.0
+    DEFAULT_PLASTICITY_STRENGTHING = 1.0
 
     # -------------------------------------------------------------------------
     # --( Class : ValueTypeException )-----------------------------------------
@@ -539,31 +537,26 @@ class MicroNN :
                 raise MicroNN.ConnectionException('"neuronSrc" and "neuronDst" must be of Neuron type.')
             neuronSrc.OutputConnections.append(self)
             neuronDst.InputConnections.append(self)
-            self._neuronSrc           = neuronSrc
-            self._neuronDst           = neuronDst
-            self._weight              = weight if weight else 0.0
-            self._momentumDeltaWeight = 0.0
+            self._neuronSrc      = neuronSrc
+            self._neuronDst      = neuronDst
+            self._deltaError     = 0.0
+            self._weight         = weight if weight else 0.0
+            self._momentumWeight = 0.0
 
         # -[ Methods ]------------------------------------------
 
-        def BackPropagateError(self, signalError) :
+        def BackPropagateSignalError(self, signalError) :
             self._neuronSrc.Error += signalError * self._weight
+            self._deltaError      += signalError * self._neuronSrc.Output
 
         # ------------------------------------------------------
 
-        def UpdateWeightFromValue(self, signalError, value, learningRate, plasticityStrengthing) :
-            deltaWeight                = learningRate * signalError * value
-            self._weight              -= deltaWeight \
-                                       + (plasticityStrengthing * self._momentumDeltaWeight)
-            self._momentumDeltaWeight  = deltaWeight
-
-        # ------------------------------------------------------
-
-        def UpdateWeight(self, signalError, learningRate, plasticityStrengthing) :
-            self.UpdateWeightFromValue( signalError,
-                                        self._neuronSrc.Output,
-                                        learningRate,
-                                        plasticityStrengthing )
+        def UpdateWeight(self, batchSize, learningRate, plasticityStrengthing) :
+            deltaWeight           = (learningRate/batchSize) * self._deltaError
+            self._weight         -= deltaWeight \
+                                  + self._momentumWeight * plasticityStrengthing
+            self._momentumWeight  = deltaWeight
+            self._deltaError      = 0.0
 
         # -[ Properties ]---------------------------------------
 
@@ -615,7 +608,7 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def ComputeInput(self) :
-            self._error = 0.0
+            #self._error = 0.0
             self._input = 0.0
             for conn in self._inputConnections :
                 self._input += conn.NeuronSrc.Output * conn.Weight
@@ -643,13 +636,17 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def BackPropagateAndUpdateWeights(self, learningRate, plasticityStrengthing) :
+        def BackPropagateError(self) :
             signalError = self.GetSignalError()
             for conn in self._inputConnections :
-                conn.BackPropagateError(signalError)
-                conn.UpdateWeight( signalError,
-                                   learningRate,
-                                   plasticityStrengthing )
+                conn.BackPropagateSignalError(signalError)
+            self._error = 0.0
+
+        # ------------------------------------------------------
+
+        def UpdateConnectionsWeight(self, batchSize, learningRate, plasticityStrengthing) :
+            for conn in self._inputConnections :
+                conn.UpdateWeight(batchSize, learningRate, plasticityStrengthing)
 
         # ------------------------------------------------------
 
@@ -884,19 +881,37 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def _recurBackPropagateAndUpdateWeights(self, neurons, dimIdx=0) :
+        def _recurBackPropagateError(self, neurons, dimIdx=0) :
             if dimIdx < self.DimensionsCount :
                 for i in range(self._dimensions[dimIdx]) :
-                    self._recurBackPropagateAndUpdateWeights(neurons[i], dimIdx+1)
+                    self._recurBackPropagateError(neurons[i], dimIdx+1)
             else :
                 for i in range(self._shape.FlattenLen) :
-                    neurons[i].BackPropagateAndUpdateWeights( self._parentMicroNN.LearningRate,
-                                                              self._parentMicroNN.PlasticityStrengthing )
+                    neurons[i].BackPropagateError()
 
         # ------------------------------------------------------
 
-        def BackPropagateAndUpdateWeights(self) :
-            self._recurBackPropagateAndUpdateWeights(self._neurons)
+        def BackPropagateError(self) :
+            self._recurBackPropagateError(self._neurons)
+
+        # ------------------------------------------------------
+
+        def _recurUpdateConnectionsWeight(self, batchSize, neurons, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurUpdateConnectionsWeight(batchSize, neurons[i], dimIdx+1)
+            else :
+                for i in range(self._shape.FlattenLen) :
+                    neurons[i].UpdateConnectionsWeight( batchSize,
+                                                        self._parentMicroNN.LearningRate,
+                                                        self._parentMicroNN.PlasticityStrengthing )
+
+        # ------------------------------------------------------
+
+        def UpdateConnectionsWeight(self, batchSize) :
+            if type(batchSize) is not int or batchSize <= 0 :
+                raise MicroNN.LayerException('"batchSize" must be of "int" type greater than zero.')
+            self._recurUpdateConnectionsWeight(batchSize, self._neurons)
 
         # ------------------------------------------------------
 
@@ -1224,7 +1239,7 @@ class MicroNN :
     # -------------------------------------------------------------------------
     # --( Class : Conv2DLayer )------------------------------------------------
     # -------------------------------------------------------------------------
- 
+    '''
     class Conv2DLayer(BaseLayer) :
  
         # -[ Constructor ]--------------------------------------
@@ -1352,8 +1367,8 @@ class MicroNN :
 
         # ------------------------------------------------------
 
-        def BackPropagateAndUpdateWeights(self) :
-            super().BackPropagateAndUpdateWeights()
+        def BackPropagateError(self) :
+            super().BackPropagateError()
             for kernelIdx in range(len(self._kernels)) :
                 kernel         = self._kernels[kernelIdx]
                 kernelInLayer  = kernel.GetInputLayer()
@@ -1366,10 +1381,7 @@ class MicroNN :
                         winStartY = (outY * self._winCountY) - self._overlappedShapesCount
                         outputNrn = self._neurons[outX][outY][kernelIdx]
                         for i in range(self._shape.FlattenLen) :
-                            sigErr = outputNrn[i].GetSignalError()
-                            for conn in kernelOutNrn[i].InputConnections :
-                                conn.BackPropagateError(sigErr)
-                            kernelOutNrn[i].TotalSigErr += sigErr
+                            kernelOutNrn[i].BackPropagateError()
                         for winX in range(self._winWidth) :
                             inX = winStartX + winX
                             for winY in range(self._winHeight) :
@@ -1388,13 +1400,7 @@ class MicroNN :
                                         for i in range(self._topLayer.Shape.FlattenLen) :
                                             topLayerNrnXY[i].Error          += kernelInNrnXY[0][i].Error
                                             kernelInNrnXY[0][i].TotalOutput += topLayerNrnXY[i].Output
-                for i in range(self._shape.FlattenLen) :
-                    for conn in kernelOutNrn[i].InputConnections :
-                        conn.UpdateWeightFromValue( kernelOutNrn[i].TotalSigErr / self._out2DNeuronsCount,
-                                                    conn.NeuronSrc.TotalOutput  / self._out2DNeuronsCount,
-                                                    kernel.LearningRate,
-                                                    kernel.PlasticityStrengthing )
-
+    '''
     # -------------------------------------------------------------------------
     # --( Class : ConnStructException )----------------------------------------
     # -------------------------------------------------------------------------
@@ -2188,13 +2194,6 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def Learn(self, inputValues, targetValues) :
-        if not inputValues or not targetValues :
-            raise MicroNNException('"inputValues" and "targetValues" must be defined.')
-        self._simulate(inputValues, targetValues, True)
-
-    # ------------------------------------------------------
-
     def Test(self, inputValues, targetValues) :
         if not inputValues or not targetValues :
             raise MicroNNException('"inputValues" and "targetValues" must be defined.')
@@ -2268,49 +2267,44 @@ class MicroNN :
     # ------------------------------------------------------
 
     def LearnExamples( self,
-                       batchSize    = 100,
-                       maxSeconds   = None,
-                       maxLearnings = None,
-                       verbose      = True ) :
+                       minibatchSize = None,
+                       maxEpochs     = None,
+                       maxSeconds    = None,
+                       verbose       = True ) :
         self._ensureNetworkIsComplete()
-        if batchSize is not None :
-            if not isinstance(batchSize, int) or batchSize <= 0 :
-                raise MicroNNException('"batchSize" must be of "int" type greater than zero.')
+        examplesCount = len(self._examples)
+        if examplesCount == 0 :
+            raise MicroNNException('No examples found.')
+        if minibatchSize is None :
+            minibatchSize = examplesCount
+        elif not isinstance(minibatchSize, int) or minibatchSize <= 0 :
+            raise MicroNNException('"minibatchSize" must be of "int" type greater than zero.')
+        if maxEpochs is not None :
+            if not isinstance(maxEpochs, int) or maxEpochs <= 0 :
+                raise MicroNNException('"maxEpochs" must be of "int" type greater than zero.')
         if maxSeconds is not None :
             if not isinstance(maxSeconds, int) or maxSeconds <= 0 :
                 raise MicroNNException('"maxSeconds" must be of "int" type greater than zero.')
-        if maxLearnings is not None :
-            if not isinstance(maxLearnings, int) or maxLearnings <= 0 :
-                raise MicroNNException('"maxLearnings" must be of "int" type greater than zero.')
-        examplesCount = len(self._examples)
-        count         = 0
-        batch         = 0
-        if examplesCount > 0 :
-            endTime        = (time() + maxSeconds) if maxSeconds else None
-            lastSuccessAvg = -2**24
-            while ( endTime      is None or time() < endTime      ) and \
-                  ( maxLearnings is None or count  < maxLearnings ) :
-                ex = self._examples[count % examplesCount]
-                self.Learn(ex[0], ex[1])
-                count += 1
-                if count % (batchSize*examplesCount) == 0 :
-                    batch += 1
-                    successAvg = 0.0
-                    for ex in self._examples :
-                        successAvg += self.Test(ex[0], ex[1])
-                    successAvg /= examplesCount
-                    if verbose :
-                        print( "MicroNN [ STEP : %s / BATCH : %s / SUCCESS : %s%% ]"
-                               % ( count, batch, round(successAvg*1000)/1000 ) )
-                    if successAvg >= MicroNN.MIN_LEARNED_SUCCESS_PERCENT :
-                        return True
-                    '''
-                    elif successAvg < lastSuccessAvg :
-                        return False
-                    '''
-                    lastSuccessAvg = successAvg
-                    random.shuffle(self._examples)
-        return False
+        epochCount = 0
+        endTime    = (time() + maxSeconds) if maxSeconds else None
+        while ( endTime   is None or time()     < endTime   ) and \
+              ( maxEpochs is None or epochCount < maxEpochs ) :
+            random.shuffle(self._examples)
+            for i in range(0, examplesCount, minibatchSize) :
+                for ex in self._examples[i:i+minibatchSize] :
+                    self._simulate(ex[0], ex[1])
+                    self._backPropagateError()
+                self._updateWeights(batchSize=minibatchSize)
+            epochCount += 1
+            successAvg = 0.0
+            for ex in self._examples :
+                successAvg += self.Test(ex[0], ex[1])
+            successAvg /= examplesCount
+            if verbose :
+                print( "MicroNN [ EPOCH %s -> SUCCESS %s%% ]"
+                       % ( epochCount, round(successAvg*1000)/1000 ) )
+            if successAvg == 100 :
+                break
 
     # ------------------------------------------------------
 
@@ -2397,25 +2391,30 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def _backPropagateAndUpdateWeights(self) :
+    def _backPropagateError(self) :
         self._ensureNetworkIsComplete()
         i = len(self._layers)-1
         while i > 0 :
-            self._layers[i].BackPropagateAndUpdateWeights()
+            self._layers[i].BackPropagateError()
             i -= 1
 
     # ------------------------------------------------------
 
-    def _simulate(self, inputValues, targetValues=None, training=False) :
+    def _updateWeights(self, batchSize) :
         self._ensureNetworkIsComplete()
-        if training and not targetValues :
-            raise MicroNN.MicroNNException('"targetValues" must be defined when training is activated.')
+        i = len(self._layers)-1
+        while i > 0 :
+            self._layers[i].UpdateConnectionsWeight(batchSize)
+            i -= 1
+
+    # ------------------------------------------------------
+
+    def _simulate(self, inputValues, targetValues=None) :
+        self._ensureNetworkIsComplete()
         self.GetInputLayer().SetInputValues(inputValues)
         self._propagate()
         if targetValues :
             self.GetOutputLayer().ComputeTargetError(targetValues)
-            if training :
-                self._backPropagateAndUpdateWeights()
 
     # -[ Properties ]---------------------------------------
 
