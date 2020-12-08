@@ -2194,6 +2194,15 @@ class MicroNN :
 
     # ------------------------------------------------------
 
+    def Learn(self, inputValues, targetValues) :
+        if not inputValues or not targetValues :
+            raise MicroNNException('"inputValues" and "targetValues" must be defined.')
+        self._simulate(inputValues, targetValues)
+        self._backPropagateError()
+        self._updateWeights(batchSize=1)
+
+    # ------------------------------------------------------
+
     def Test(self, inputValues, targetValues) :
         if not inputValues or not targetValues :
             raise MicroNNException('"inputValues" and "targetValues" must be defined.')
