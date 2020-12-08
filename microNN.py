@@ -1,6 +1,6 @@
 """
 The MIT License (MIT)
-Copyright © 2019 Jean-Christophe Bos & HC² (www.hc2.fr)
+Copyright © 2020 Jean-Christophe Bos (jczic.bos@gmail.com)
 """
 
 
