@@ -22,7 +22,7 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                        = '1.0.5'
+    VERSION                        = '1.0.6'
 
     DEFAULT_LEARNING_RATE          = 1.0
     DEFAULT_PLASTICITY_STRENGTHING = 1.0
@@ -608,7 +608,6 @@ class MicroNN :
         # -[ Methods ]------------------------------------------
 
         def ComputeInput(self) :
-            #self._error = 0.0
             self._input = 0.0
             for conn in self._inputConnections :
                 self._input += conn.NeuronSrc.Output * conn.Weight
@@ -747,7 +746,7 @@ class MicroNN :
                       shape,
                       activation    = None,
                       initializer   = None,
-                      biasValue     = 1.0 ) :
+                      biasValue     = None ) :
             if type(self) is MicroNN.BaseLayer :
                 raise MicroNN.LayerException('"BaseLayer" is an abstract class and cannot be instancied.')
             if not isinstance(parentMicroNN, MicroNN) :
@@ -1239,7 +1238,7 @@ class MicroNN :
     # -------------------------------------------------------------------------
     # --( Class : Conv2DLayer )------------------------------------------------
     # -------------------------------------------------------------------------
-    '''
+
     class Conv2DLayer(BaseLayer) :
  
         # -[ Constructor ]--------------------------------------
@@ -1247,160 +1246,179 @@ class MicroNN :
         def __init__( self,
                       parentMicroNN,
                       filtersCount,
-                      overlappedShapesCount,
-                      width,
-                      height,
+                      filtersDepth,
+                      convSize,
                       shape,
                       activation,
-                      initializer,
-                      biasValue = 1.0 ) :
+                      initializer ) :
             if not isinstance(filtersCount, int) or filtersCount <= 0 :
                 raise MicroNN.LayerException('"filtersCount" must be of "int" type greater than zero.')
-            if not isinstance(overlappedShapesCount, int) or overlappedShapesCount < 0 :
-                raise MicroNN.LayerException('"overlappedShapesCount" must be of "int" type >= zero.')
-            if type(width)  is not int or width  <= 0 or \
-               type(height) is not int or height <= 0 :
-                raise MicroNN.LayerException('"width" and "height" must be of "int" type greater than zero.')
+            if not isinstance(filtersDepth, int) or filtersDepth <= 0 :
+                raise MicroNN.LayerException('"filtersDepth" must be of "int" type greater than zero.')
+            if not isinstance(convSize, int) or convSize <= 0 :
+                raise MicroNN.LayerException('"convSize" must be of "int" type greater than zero.')
+            if convSize % 2 == 0 :
+                raise MicroNN.LayerException('"convSize" must be an odd number.')
+            if not parentMicroNN.Layers :
+                raise MicroNN.LayerException('Only an input layer can be added as first layer.')
+            topLayer = parentMicroNN.Layers[len(parentMicroNN.Layers)-1]
+            if topLayer.DimensionsCount == 3 :
+                self._topLayerDepth = topLayer.Dimensions[2]
+            elif topLayer.DimensionsCount == 2 :
+                self._topLayerDepth = None
+            else :
+                raise MicroNN.LayerException('2D convolution layer cannot be added after this top layer.')
+            self._topLayerWidth  = topLayer.Dimensions[0]
+            self._topLayerHeight = topLayer.Dimensions[1]
+            self._filtersCount   = filtersCount
+            self._filtersDepth   = filtersDepth
+            self._convSize       = convSize
+            self._convCount      = self._topLayerWidth * self._topLayerHeight
             super().__init__( parentMicroNN = parentMicroNN,
-                              dimensions    = [width, height, filtersCount],
+                              dimensions    = [ self._topLayerWidth,
+                                                self._topLayerHeight,
+                                                self._filtersDepth ],
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
-                              biasValue     = biasValue )
-            if isinstance(self._topLayer, MicroNN.Conv2DLayer) :
-                self._inDepth = self._topLayer.Dimensions[2]
-            elif self._topLayer.DimensionsCount == 2 :
-                self._inDepth = None
-            else :
-                raise MicroNN.LayerException('2D convolution layer cannot be added after this top layer.')
-            self._inWidth               = self._topLayer.Dimensions[0]
-            self._inHeight              = self._topLayer.Dimensions[1]
-            self._outWidth              = width
-            self._outHeight             = height
-            self._outDepth              = filtersCount
-            self._out2DNeuronsCount     = self._outWidth  \
-                                        * self._outHeight \
-                                        * self._shape.FlattenLen
-            self._overlappedShapesCount = overlappedShapesCount
-            if self._outWidth > self._inWidth or self._outHeight > self._inHeight :
-                raise MicroNN.LayerException('Layer 2D size (width x height) must be <= than top layer 2D size.')
-            self._winCountX   = ceil(self._inWidth  / self._outWidth)
-            self._winCountY   = ceil(self._inHeight / self._outHeight)
-            self._winWidth    = self._winCountX + (2 * self._overlappedShapesCount)
-            self._winHeight   = self._winCountY + (2 * self._overlappedShapesCount)
-            self._kernels     = [ ]
-            for i in range(filtersCount) :
-                kernel                       = MicroNN()
-                kernel.LearningRate          = parentMicroNN.LearningRate
-                kernel.PlasticityStrengthing = parentMicroNN.PlasticityStrengthing
-                kernel.AddInputLayer  ( dimensions  = [ self._winWidth,
-                                                        self._winHeight,
-                                                        (self._inDepth if self._inDepth else 1) ],
-                                        shape       = self._topLayer.Shape )
-                kernel.AddOutputLayer ( dimensions  = [1],
-                                        shape       = shape,
-                                        activation  = activation,
-                                        initializer = initializer,
-                                        connStruct  = MicroNN.FullyConnected,
-                                        biasValue   = None )
-                self._kernels.append(kernel)
- 
+                              biasValue     = None )
+            self._kernel                       = MicroNN()
+            self._kernel.LearningRate          = parentMicroNN.LearningRate
+            self._kernel.PlasticityStrengthing = parentMicroNN.PlasticityStrengthing
+            kernelDim                          = [self._convSize, self._convSize]
+            if self._topLayerDepth :
+                kernelDim.append(self._topLayerDepth)
+            self._kernel.AddInputLayer  ( dimensions  = kernelDim,
+                                          shape       = topLayer.Shape )
+            self._kernel.AddLayer       ( dimensions  = [filtersCount],
+                                          shape       = shape,
+                                          activation  = activation,
+                                          initializer = initializer,
+                                          connStruct  = MicroNN.FullyConnected )
+            self._kernel.AddOutputLayer ( dimensions  = [filtersDepth],
+                                          shape       = shape,
+                                          activation  = activation,
+                                          initializer = initializer,
+                                          connStruct  = MicroNN.FullyConnected )
+            self._inputConnCount = self._kernel.ConnectionsCount
+
         # -[ Methods ]------------------------------------------
 
         def InitWeights(self) :
-            for kernel in self._kernels :
-                kernel.InitWeights()
+            self._kernel.InitWeights()
 
         # ------------------------------------------------------
 
         def ComputeInput(self) :
-            for kernelIdx in range(len(self._kernels)) :
-                kernel         = self._kernels[kernelIdx]
-                kernelInNrn    = kernel.GetInputLayer().Neurons
-                kernelOutLayer = kernel.GetOutputLayer()
-                kernelOutNrn   = kernelOutLayer.Neurons[0]
-                for outX in range(self._outWidth) :
-                    winStartX = (outX * self._winCountX) - self._overlappedShapesCount
-                    for outY in range(self._outHeight) :
-                        winStartY = (outY * self._winCountY) - self._overlappedShapesCount
-                        outputNrn = self._neurons[outX][outY][kernelIdx]
-                        for winX in range(self._winWidth) :
-                            inX = winStartX + winX
-                            for winY in range(self._winHeight) :
-                                inY           = winStartY + winY
-                                kernelInNrnXY = kernelInNrn[winX][winY]
-                                zeroPadding   = ( inX < 0 or inX >= self._inWidth or \
-                                                  inY < 0 or inY >= self._inHeight )
-                                if not zeroPadding :
-                                    topLayerNrnXY = self._topLayer.Neurons[inX][inY]
-                                if self._inDepth :
-                                    for depth in range(self._inDepth) :
-                                        for i in range(self._topLayer.Shape.FlattenLen) :
-                                            if not zeroPadding :
-                                                val = topLayerNrnXY[depth][i].Output
-                                            else :
-                                                val = 0.0
-                                            kernelInNrnXY[depth][i].Output      = val
-                                            kernelInNrnXY[depth][i].TotalOutput = 0.0
-                                else :
+            kernelInNrn    = self._kernel.GetInputLayer().Neurons
+            kernelOutNrn   = self._kernel.GetOutputLayer().Neurons
+            for x in range(self._topLayerWidth) :
+                winStartX = x - self._convSize//2
+                for y in range(self._topLayerHeight) :
+                    winStartY = y - self._convSize//2                    
+                    for winX in range(self._convSize) :
+                        inX = winStartX + winX
+                        for winY in range(self._convSize) :
+                            inY           = winStartY + winY
+                            kernelInNrnXY = kernelInNrn[winX][winY]
+                            zeroPadding   = ( inX < 0 or inX >= self._topLayerWidth or \
+                                              inY < 0 or inY >= self._topLayerHeight )
+                            if not zeroPadding :
+                                topLayerNrnXY = self._topLayer.Neurons[inX][inY]
+                            if self._topLayerDepth :
+                                for depth in range(self._topLayerDepth) :
                                     for i in range(self._topLayer.Shape.FlattenLen) :
-                                        if not zeroPadding :
-                                            val = topLayerNrnXY[i].Output
-                                        else :
-                                            val = 0.0
-                                        kernelInNrnXY[0][i].Output      = val
-                                        kernelInNrnXY[0][i].TotalOutput = 0.0
-                        kernelOutLayer.ComputeInput()
+                                        kernelInNrnXY[depth][i].Output = topLayerNrnXY[depth][i].Output \
+                                                                         if not zeroPadding else 0.0
+                            else :
+                                for i in range(self._topLayer.Shape.FlattenLen) :
+                                    kernelInNrnXY[i].Output = topLayerNrnXY[i].Output \
+                                                              if not zeroPadding else 0.0
+                    self._kernel.InternalPropagate()
+                    for fd in range(self._filtersDepth) :
                         for i in range(self._shape.FlattenLen) :
-                            outputNrn[i].ComputeInput()
-                            outputNrn[i].Input += kernelOutNrn[i].Input
-                            kernelOutNrn[i].TotalSigErr = 0.0
+                            self._neurons[x][y][fd][i].Input = kernelOutNrn[fd][i].Input
 
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
-            for outX in range(self._outWidth) :
-                for outY in range(self._outHeight) :
-                    for depth in range(self._outDepth) :
+            for x in range(self._topLayerWidth) :
+                for y in range(self._topLayerHeight) :
+                    for fd in range(self._filtersDepth) :
                         for i in range(self._shape.FlattenLen) :
-                            self._neurons[outX][outY][depth][i].ComputeOutput()
+                            self._neurons[x][y][fd][i].ComputeOutput()
 
         # ------------------------------------------------------
 
         def BackPropagateError(self) :
-            super().BackPropagateError()
-            for kernelIdx in range(len(self._kernels)) :
-                kernel         = self._kernels[kernelIdx]
-                kernelInLayer  = kernel.GetInputLayer()
-                kernelInNrn    = kernelInLayer.Neurons
-                kernelOutLayer = kernel.GetOutputLayer()
-                kernelOutNrn   = kernelOutLayer.Neurons[0]
-                for outX in range(self._outWidth) :
-                    winStartX = (outX * self._winCountX) - self._overlappedShapesCount
-                    for outY in range(self._outHeight) :
-                        winStartY = (outY * self._winCountY) - self._overlappedShapesCount
-                        outputNrn = self._neurons[outX][outY][kernelIdx]
+            kernelInNrn    = self._kernel.GetInputLayer().Neurons
+            kernelOutNrn   = self._kernel.GetOutputLayer().Neurons
+            for x in range(self._topLayerWidth) :
+                winStartX = x - self._convSize//2
+                for y in range(self._topLayerHeight) :
+                    winStartY = y - self._convSize//2                    
+                    for winX in range(self._convSize) :
+                        inX = winStartX + winX
+                        for winY in range(self._convSize) :
+                            inY           = winStartY + winY
+                            kernelInNrnXY = kernelInNrn[winX][winY]
+                            zeroPadding   = ( inX < 0 or inX >= self._topLayerWidth or \
+                                              inY < 0 or inY >= self._topLayerHeight )
+                            if not zeroPadding :
+                                topLayerNrnXY = self._topLayer.Neurons[inX][inY]
+                            if self._topLayerDepth :
+                                for depth in range(self._topLayerDepth) :
+                                    for i in range(self._topLayer.Shape.FlattenLen) :
+                                        kernelInNrnXY[depth][i].Output = topLayerNrnXY[depth][i].Output \
+                                                                         if not zeroPadding else 0.0
+                            else :
+                                for i in range(self._topLayer.Shape.FlattenLen) :
+                                    kernelInNrnXY[i].Output = topLayerNrnXY[i].Output \
+                                                              if not zeroPadding else 0.0
+                    self._kernel.InternalPropagate()
+                    for fd in range(self._filtersDepth) :
                         for i in range(self._shape.FlattenLen) :
-                            kernelOutNrn[i].BackPropagateError()
-                        for winX in range(self._winWidth) :
-                            inX = winStartX + winX
-                            for winY in range(self._winHeight) :
-                                inY           = winStartY + winY
-                                kernelInNrnXY = kernelInNrn[winX][winY]
-                                zeroPadding   = ( inX < 0 or inX >= self._inWidth or \
-                                                  inY < 0 or inY >= self._inHeight )
-                                if not zeroPadding :
-                                    topLayerNrnXY = self._topLayer.Neurons[inX][inY]
-                                    if self._inDepth :
-                                        for depth in range(self._inDepth) :
-                                            for i in range(self._topLayer.Shape.FlattenLen) :
-                                                topLayerNrnXY[depth][i].Error       += kernelInNrnXY[depth][i].Error
-                                                kernelInNrnXY[depth][i].TotalOutput += topLayerNrnXY[depth][i].Output
-                                    else :
-                                        for i in range(self._topLayer.Shape.FlattenLen) :
-                                            topLayerNrnXY[i].Error          += kernelInNrnXY[0][i].Error
-                                            kernelInNrnXY[0][i].TotalOutput += topLayerNrnXY[i].Output
-    '''
+                            kernelOutNrn[fd][i].Error        = self._neurons[x][y][fd][i].Error
+                            self._neurons[x][y][fd][i].Error = 0.0
+                    self._kernel.InternalBackPropagateError()
+                    for winX in range(self._convSize) :
+                        inX = winStartX + winX
+                        for winY in range(self._convSize) :
+                            inY           = winStartY + winY
+                            kernelInNrnXY = kernelInNrn[winX][winY]
+                            zeroPadding   = ( inX < 0 or inX >= self._topLayerWidth or \
+                                              inY < 0 or inY >= self._topLayerHeight )
+                            if zeroPadding :
+                                continue
+                            topLayerNrnXY = self._topLayer.Neurons[inX][inY]
+                            if self._topLayerDepth :
+                                for depth in range(self._topLayerDepth) :
+                                    for i in range(self._topLayer.Shape.FlattenLen) :
+                                        topLayerNrnXY[depth][i].Error += kernelInNrnXY[depth][i].Error
+                                        kernelInNrnXY[depth][i].Error  = 0.0
+                            else :
+                                for i in range(self._topLayer.Shape.FlattenLen) :
+                                    topLayerNrnXY[i].Error += kernelInNrnXY[i].Error
+                                    kernelInNrnXY[i].Error  = 0.0
+
+        # ------------------------------------------------------
+
+        def UpdateConnectionsWeight(self, batchSize) :
+            if type(batchSize) is not int or batchSize <= 0 :
+                raise MicroNN.LayerException('"batchSize" must be of "int" type greater than zero.')
+            self._kernel.InternalUpdateWeights( batchSize = self._convCount * batchSize )
+
+        # ------------------------------------------------------
+
+        def GetAsDataObject(self) :
+            raise MicroNN.ShapeException('Serialization method not yet implemented for Conv2D layers.')
+
+        # ------------------------------------------------------
+
+        @staticmethod
+        def CreateFromDataObject(parentMicroNN, o) :
+            raise MicroNN.ShapeException('Unserialization method not yet implemented for Conv2D layers.')
+
     # -------------------------------------------------------------------------
     # --( Class : ConnStructException )----------------------------------------
     # -------------------------------------------------------------------------
@@ -2197,16 +2215,16 @@ class MicroNN :
     def Learn(self, inputValues, targetValues) :
         if not inputValues or not targetValues :
             raise MicroNNException('"inputValues" and "targetValues" must be defined.')
-        self._simulate(inputValues, targetValues)
-        self._backPropagateError()
-        self._updateWeights(batchSize=1)
+        self.InternalSimulate(inputValues, targetValues)
+        self.InternalBackPropagateError()
+        self.InternalUpdateWeights(batchSize=1)
 
     # ------------------------------------------------------
 
     def Test(self, inputValues, targetValues) :
         if not inputValues or not targetValues :
             raise MicroNNException('"inputValues" and "targetValues" must be defined.')
-        self._simulate(inputValues, targetValues)
+        self.InternalSimulate(inputValues, targetValues)
         return self.SuccessPercent
 
     # ------------------------------------------------------
@@ -2214,7 +2232,7 @@ class MicroNN :
     def Predict(self, inputValues) :
         if not inputValues :
             raise MicroNNException('"inputValues" must be defined.')
-        self._simulate(inputValues)
+        self.InternalSimulate(inputValues)
         return self.GetOutputLayer().GetOutputValues()
 
     # ------------------------------------------------------
@@ -2294,26 +2312,36 @@ class MicroNN :
         if maxSeconds is not None :
             if not isinstance(maxSeconds, int) or maxSeconds <= 0 :
                 raise MicroNNException('"maxSeconds" must be of "int" type greater than zero.')
-        epochCount = 0
-        endTime    = (time() + maxSeconds) if maxSeconds else None
+        epochCount     = 0
+        endTime        = (time() + maxSeconds) if maxSeconds else None
+        lastSuccessAvg = 0.0
+        learnedOkCount = 0
         while ( endTime   is None or time()     < endTime   ) and \
               ( maxEpochs is None or epochCount < maxEpochs ) :
             random.shuffle(self._examples)
             for i in range(0, examplesCount, minibatchSize) :
                 for ex in self._examples[i:i+minibatchSize] :
-                    self._simulate(ex[0], ex[1])
-                    self._backPropagateError()
-                self._updateWeights(batchSize=minibatchSize)
+                    self.InternalSimulate(ex[0], ex[1])
+                    self.InternalBackPropagateError()
+                self.InternalUpdateWeights(batchSize=minibatchSize)
             epochCount += 1
             successAvg = 0.0
             for ex in self._examples :
                 successAvg += self.Test(ex[0], ex[1])
             successAvg /= examplesCount
             if verbose :
-                print( "MicroNN [ EPOCH %s -> SUCCESS %s%% ]"
-                       % ( epochCount, round(successAvg*1000)/1000 ) )
+                print( "MicroNN : EPOCH %s -> SUCCESS %s%% (%s)"
+                       % ( epochCount,
+                           round(successAvg*1000)/1000,
+                           '+' if successAvg > lastSuccessAvg else \
+                           '-' if successAvg < lastSuccessAvg else '=' ) )
             if successAvg == 100 :
-                break
+                learnedOkCount += 1
+                if learnedOkCount == 5 :
+                    break
+            else :
+                learnedOkCount = 0
+            lastSuccessAvg = successAvg
 
     # ------------------------------------------------------
 
@@ -2391,7 +2419,7 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def _propagate(self) :
+    def InternalPropagate(self) :
         self._ensureNetworkIsComplete()
         for layer in self._layers :
             if not isinstance(layer, MicroNN.InputLayer) :
@@ -2400,7 +2428,7 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def _backPropagateError(self) :
+    def InternalBackPropagateError(self) :
         self._ensureNetworkIsComplete()
         i = len(self._layers)-1
         while i > 0 :
@@ -2409,7 +2437,7 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def _updateWeights(self, batchSize) :
+    def InternalUpdateWeights(self, batchSize) :
         self._ensureNetworkIsComplete()
         i = len(self._layers)-1
         while i > 0 :
@@ -2418,10 +2446,10 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def _simulate(self, inputValues, targetValues=None) :
+    def InternalSimulate(self, inputValues, targetValues=None) :
         self._ensureNetworkIsComplete()
         self.GetInputLayer().SetInputValues(inputValues)
-        self._propagate()
+        self.InternalPropagate()
         if targetValues :
             self.GetOutputLayer().ComputeTargetError(targetValues)
 
