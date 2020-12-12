@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """
 The MIT License (MIT)
 Copyright © 2020 Jean-Christophe Bos (jczic.bos@gmail.com)
@@ -22,7 +24,7 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                        = '1.0.6'
+    VERSION                        = '1.0.7'
 
     DEFAULT_LEARNING_RATE          = 1.0
     DEFAULT_PLASTICITY_STRENGTHING = 1.0
@@ -1248,6 +1250,7 @@ class MicroNN :
                       filtersCount,
                       filtersDepth,
                       convSize,
+                      stride,
                       shape,
                       activation,
                       initializer ) :
@@ -1259,6 +1262,8 @@ class MicroNN :
                 raise MicroNN.LayerException('"convSize" must be of "int" type greater than zero.')
             if convSize % 2 == 0 :
                 raise MicroNN.LayerException('"convSize" must be an odd number.')
+            if not isinstance(stride, int) or stride <= 0 :
+                raise MicroNN.LayerException('"stride" must be of "int" type greater than zero.')
             if not parentMicroNN.Layers :
                 raise MicroNN.LayerException('Only an input layer can be added as first layer.')
             topLayer = parentMicroNN.Layers[len(parentMicroNN.Layers)-1]
@@ -1273,10 +1278,13 @@ class MicroNN :
             self._filtersCount   = filtersCount
             self._filtersDepth   = filtersDepth
             self._convSize       = convSize
-            self._convCount      = self._topLayerWidth * self._topLayerHeight
+            self._stride         = stride
+            self._outWidth       = ceil(self._topLayerWidth  / self._stride)
+            self._outHeight      = ceil(self._topLayerHeight / self._stride)
+            self._convCount      = self._outWidth * self._outHeight
             super().__init__( parentMicroNN = parentMicroNN,
-                              dimensions    = [ self._topLayerWidth,
-                                                self._topLayerHeight,
+                              dimensions    = [ self._outWidth,
+                                                self._outHeight,
                                                 self._filtersDepth ],
                               shape         = shape,
                               activation    = activation,
@@ -1312,9 +1320,9 @@ class MicroNN :
         def ComputeInput(self) :
             kernelInNrn    = self._kernel.GetInputLayer().Neurons
             kernelOutNrn   = self._kernel.GetOutputLayer().Neurons
-            for x in range(self._topLayerWidth) :
+            for x in range(0, self._topLayerWidth, self._stride) :
                 winStartX = x - self._convSize//2
-                for y in range(self._topLayerHeight) :
+                for y in range(0, self._topLayerHeight, self._stride) :
                     winStartY = y - self._convSize//2                    
                     for winX in range(self._convSize) :
                         inX = winStartX + winX
@@ -1337,13 +1345,13 @@ class MicroNN :
                     self._kernel.InternalPropagate()
                     for fd in range(self._filtersDepth) :
                         for i in range(self._shape.FlattenLen) :
-                            self._neurons[x][y][fd][i].Input = kernelOutNrn[fd][i].Input
+                            self._neurons[x//self._stride][y//self._stride][fd][i].Input = kernelOutNrn[fd][i].Input
 
         # ------------------------------------------------------
 
         def ComputeOutput(self) :
-            for x in range(self._topLayerWidth) :
-                for y in range(self._topLayerHeight) :
+            for x in range(self._outWidth) :
+                for y in range(self._outHeight) :
                     for fd in range(self._filtersDepth) :
                         for i in range(self._shape.FlattenLen) :
                             self._neurons[x][y][fd][i].ComputeOutput()
@@ -1353,9 +1361,9 @@ class MicroNN :
         def BackPropagateError(self) :
             kernelInNrn    = self._kernel.GetInputLayer().Neurons
             kernelOutNrn   = self._kernel.GetOutputLayer().Neurons
-            for x in range(self._topLayerWidth) :
+            for x in range(0, self._topLayerWidth, self._stride) :
                 winStartX = x - self._convSize//2
-                for y in range(self._topLayerHeight) :
+                for y in range(0, self._topLayerHeight, self._stride) :
                     winStartY = y - self._convSize//2                    
                     for winX in range(self._convSize) :
                         inX = winStartX + winX
@@ -1378,8 +1386,9 @@ class MicroNN :
                     self._kernel.InternalPropagate()
                     for fd in range(self._filtersDepth) :
                         for i in range(self._shape.FlattenLen) :
-                            kernelOutNrn[fd][i].Error        = self._neurons[x][y][fd][i].Error
-                            self._neurons[x][y][fd][i].Error = 0.0
+                            outNrn                    = self._neurons[x//self._stride][y//self._stride][fd][i]
+                            kernelOutNrn[fd][i].Error = outNrn.Error
+                            outNrn.Error              = 0.0
                     self._kernel.InternalBackPropagateError()
                     for winX in range(self._convSize) :
                         inX = winStartX + winX
@@ -2174,6 +2183,25 @@ class MicroNN :
 
     # ------------------------------------------------------
 
+    def AddConv2DLayer( self,
+                        filtersCount,
+                        filtersDepth,
+                        convSize,
+                        stride,
+                        shape,
+                        activation  = None,
+                        initializer = None ) :
+        return MicroNN.Conv2DLayer( parentMicroNN = self,
+                                    filtersCount  = filtersCount,
+                                    filtersDepth  = filtersDepth,
+                                    convSize      = convSize,
+                                    stride        = stride,
+                                    shape         = shape,
+                                    activation    = activation,
+                                    initializer   = initializer )
+
+    # ------------------------------------------------------
+
     def AddQLearningOutputLayer(self, actionsCount) :
         if not isinstance(actionsCount, int) or actionsCount <= 1 :
             raise MicroNNException('"actionsCount" must be of "int" type greater than 1.')
@@ -2314,10 +2342,11 @@ class MicroNN :
                 raise MicroNNException('"maxSeconds" must be of "int" type greater than zero.')
         epochCount     = 0
         endTime        = (time() + maxSeconds) if maxSeconds else None
+        successAvg     = 0.0
         lastSuccessAvg = 0.0
         learnedOkCount = 0
-        while ( endTime   is None or time()     < endTime   ) and \
-              ( maxEpochs is None or epochCount < maxEpochs ) :
+        while ( maxEpochs is None or epochCount < maxEpochs ) and \
+              ( endTime   is None or time()     < endTime   ) :
             random.shuffle(self._examples)
             for i in range(0, examplesCount, minibatchSize) :
                 for ex in self._examples[i:i+minibatchSize] :
@@ -2330,11 +2359,11 @@ class MicroNN :
                 successAvg += self.Test(ex[0], ex[1])
             successAvg /= examplesCount
             if verbose :
-                print( "MicroNN : EPOCH %s -> SUCCESS %s%% (%s)"
+                print( "MicroNN: EPOCH %s  ->  (%s) %s%%"
                        % ( epochCount,
-                           round(successAvg*1000)/1000,
                            '+' if successAvg > lastSuccessAvg else \
-                           '-' if successAvg < lastSuccessAvg else '=' ) )
+                           '-' if successAvg < lastSuccessAvg else '=',
+                           round(successAvg*1000)/1000 ) )
             if successAvg == 100 :
                 learnedOkCount += 1
                 if learnedOkCount == 5 :
@@ -2342,6 +2371,7 @@ class MicroNN :
             else :
                 learnedOkCount = 0
             lastSuccessAvg = successAvg
+        return successAvg
 
     # ------------------------------------------------------
 
@@ -2421,28 +2451,37 @@ class MicroNN :
 
     def InternalPropagate(self) :
         self._ensureNetworkIsComplete()
-        for layer in self._layers :
-            if not isinstance(layer, MicroNN.InputLayer) :
-                layer.ComputeInput()
-                layer.ComputeOutput()
+        try :
+            for layer in self._layers :
+                if not isinstance(layer, MicroNN.InputLayer) :
+                    layer.ComputeInput()
+                    layer.ComputeOutput()
+        except OverflowError as ex :
+            raise MicroNNException('Exploding Gradients (math overflow error).')
 
     # ------------------------------------------------------
 
     def InternalBackPropagateError(self) :
         self._ensureNetworkIsComplete()
-        i = len(self._layers)-1
-        while i > 0 :
-            self._layers[i].BackPropagateError()
-            i -= 1
+        try :
+            i = len(self._layers)-1
+            while i > 0 :
+                self._layers[i].BackPropagateError()
+                i -= 1
+        except OverflowError as ex :
+            raise MicroNNException('Exploding Gradients (math overflow error).')
 
     # ------------------------------------------------------
 
     def InternalUpdateWeights(self, batchSize) :
         self._ensureNetworkIsComplete()
-        i = len(self._layers)-1
-        while i > 0 :
-            self._layers[i].UpdateConnectionsWeight(batchSize)
-            i -= 1
+        try :
+            i = len(self._layers)-1
+            while i > 0 :
+                self._layers[i].UpdateConnectionsWeight(batchSize)
+                i -= 1
+        except OverflowError as ex :
+            raise MicroNNException('Exploding Gradients (math overflow error).')
 
     # ------------------------------------------------------
 
