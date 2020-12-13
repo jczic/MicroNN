@@ -1,8 +1,10 @@
+
 # -*- coding: utf-8 -*-
 
 """
 The MIT License (MIT)
 Copyright © 2020 Jean-Christophe Bos (jczic.bos@gmail.com)
+
 """
 
 
@@ -24,7 +26,7 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                        = '1.0.8'
+    VERSION                        = '1.0.9'
 
     DEFAULT_LEARNING_RATE          = 1.0
     DEFAULT_PLASTICITY_STRENGTHING = 1.0
@@ -780,8 +782,6 @@ class MicroNN :
             if topLayer is not None :
                 if isinstance(self, MicroNN.InputLayer) :
                     raise MicroNN.LayerException('No layer must be present to add an input layer.')
-                if isinstance(topLayer, MicroNN.OutputLayer) :
-                    raise MicroNN.LayerException('No layer can be added after an output layer.')
             elif not isinstance(self, MicroNN.InputLayer) :
                 raise MicroNN.LayerException('Only an input layer can be added as first layer.')
             self._parentMicroNN  = parentMicroNN
@@ -924,8 +924,10 @@ class MicroNN :
                 return dim
             else :
                 scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
-                if scaled :
+                if scaled and self._activation :
                     aMin, aMax = self._activation.GetRangeValues()
+                else :
+                    scaled = False
                 flattenValues = [ ]
                 for i in range(self._shape.FlattenLen) :
                     if scaled :
@@ -939,6 +941,32 @@ class MicroNN :
 
         def GetOutputValues(self) :
             return self._recurGetOutputValues(self._neurons)
+
+        # ------------------------------------------------------
+
+        def _recurComputeTargetError(self, neurons, targetValues, dimIdx=0) :
+            if dimIdx < self.DimensionsCount :
+                if type(targetValues) not in (list, tuple) or len(targetValues) != self._dimensions[dimIdx] :
+                    raise MicroNN.LayerException( 'Dimension %s of target values must be a list or a tuple of size %s.'
+                                                  % (dimIdx+1, self._dimensions[dimIdx]) )
+                for i in range(self._dimensions[dimIdx]) :
+                    self._recurComputeTargetError(neurons[i], targetValues[i], dimIdx+1)
+            else :
+                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
+                if scaled :
+                    aMin, aMax = self._activation.GetRangeValues()
+                flattenTargetValues = self._shape.Flatten(targetValues)
+                for i in range(self._shape.FlattenLen) :
+                    if scaled :
+                        t = aMin + (flattenTargetValues[i] * (aMax-aMin))
+                    else :
+                        t = flattenTargetValues[i]
+                    neurons[i].SetErrorFromTarget(t)
+
+        # ------------------------------------------------------
+
+        def ComputeTargetError(self, targetValues) :
+            self._recurComputeTargetError(self._neurons, targetValues)
 
         # ------------------------------------------------------
 
@@ -1034,14 +1062,7 @@ class MicroNN :
                                  if o['Connections'] else None
                     biasValue  = o['Bias']['Value'] \
                                  if o['Bias'] else None
-                    if layerType == 'OutputLayer' :
-                        return MicroNN.OutputLayer( parentMicroNN = parentMicroNN,
-                                                    dimensions    = dims,
-                                                    shape         = shape,
-                                                    activation    = activation,
-                                                    connStruct    = connStruct,
-                                                    biasValue     = biasValue )
-                    elif layerType == 'Layer' :
+                    if layerType == 'Layer' :
                         return MicroNN.Layer( parentMicroNN = parentMicroNN,
                                               dimensions    = dims,
                                               shape         = shape,
@@ -1197,45 +1218,13 @@ class MicroNN :
                 flattenValues = self._shape.Flatten(values)
                 for i in range(self._shape.FlattenLen) :
                     if scaled :
-                        flattenValues[i] = flattenValues[i] * 2 - 1
+                        flattenValues[i] = flattenValues[i]-0.5
                     neurons[i].Output = flattenValues[i]
 
         # ------------------------------------------------------
 
         def SetInputValues(self, values) :
             self._recurSetInputValues(self._neurons, values)
-
-    # -------------------------------------------------------------------------
-    # --( Class : OutputLayer )------------------------------------------------
-    # -------------------------------------------------------------------------
-
-    class OutputLayer(Layer) :
-
-        # -[ Methods ]------------------------------------------
-
-        def _recurComputeTargetError(self, neurons, targetValues, dimIdx=0) :
-            if dimIdx < self.DimensionsCount :
-                if type(targetValues) not in (list, tuple) or len(targetValues) != self._dimensions[dimIdx] :
-                    raise MicroNN.LayerException( 'Dimension %s of target values must be a list or a tuple of size %s.'
-                                                  % (dimIdx+1, self._dimensions[dimIdx]) )
-                for i in range(self._dimensions[dimIdx]) :
-                    self._recurComputeTargetError(neurons[i], targetValues[i], dimIdx+1)
-            else :
-                scaled = (type(self._shape.ValueType) is not MicroNN.NeuronValueType)
-                if scaled :
-                    aMin, aMax = self._activation.GetRangeValues()
-                flattenTargetValues = self._shape.Flatten(targetValues)
-                for i in range(self._shape.FlattenLen) :
-                    if scaled :
-                        t = aMin + (flattenTargetValues[i] * (aMax-aMin))
-                    else :
-                        t = flattenTargetValues[i]
-                    neurons[i].SetErrorFromTarget(t)
-
-        # ------------------------------------------------------
-
-        def ComputeTargetError(self, targetValues) :
-            self._recurComputeTargetError(self._neurons, targetValues)
 
     # -------------------------------------------------------------------------
     # --( Class : Conv2DLayer )------------------------------------------------
@@ -1301,7 +1290,7 @@ class MicroNN :
                                           activation  = activation,
                                           initializer = initializer,
                                           connStruct  = MicroNN.FullyConnected )
-            self._kernel.AddOutputLayer ( dimensions  = [filtersDepth],
+            self._kernel.AddLayer       ( dimensions  = [filtersDepth],
                                           shape       = shape,
                                           activation  = activation,
                                           initializer = initializer,
@@ -1499,7 +1488,7 @@ class MicroNN :
                                           activation  = activation,
                                           initializer = initializer,
                                           connStruct  = MicroNN.FullyConnected )
-            self._kernel.AddOutputLayer ( dimensions  = [deconvSize, deconvSize, filtersDepth],
+            self._kernel.AddLayer       ( dimensions  = [deconvSize, deconvSize, filtersDepth],
                                           shape       = shape,
                                           activation  = activation,
                                           initializer = initializer,
@@ -2373,23 +2362,6 @@ class MicroNN :
 
     # ------------------------------------------------------
 
-    def AddOutputLayer( self,
-                        dimensions,
-                        shape,
-                        activation  = None,
-                        initializer = None,
-                        connStruct  = None,
-                        biasValue   = 1.0 ) :
-        return MicroNN.OutputLayer( parentMicroNN = self,
-                                    dimensions    = dimensions,
-                                    shape         = shape,
-                                    activation    = activation,
-                                    initializer   = initializer,
-                                    connStruct    = connStruct,
-                                    biasValue     = biasValue )
-
-    # ------------------------------------------------------
-
     def AddConv2DLayer( self,
                         filtersCount,
                         filtersDepth,
@@ -2432,30 +2404,22 @@ class MicroNN :
         if not isinstance(actionsCount, int) or actionsCount <= 1 :
             raise MicroNNException('"actionsCount" must be of "int" type greater than 1.')
         initializer = MicroNN.LogisticInitializer(uniform=True, xavier=False)
-        return MicroNN.OutputLayer( parentMicroNN = self,
-                                    dimensions    = MicroNN.Init1D(actionsCount),
-                                    shape         = MicroNN.ValueShape(),
-                                    activation    = MicroNN.SoftMaxActivation(),
-                                    initializer   = initializer,
-                                    connStruct    = MicroNN.FullyConnStruct() )
+        return MicroNN.Layer( parentMicroNN = self,
+                              dimensions    = MicroNN.Init1D(actionsCount),
+                              shape         = MicroNN.ValueShape(),
+                              activation    = MicroNN.SoftMaxActivation(),
+                              initializer   = initializer,
+                              connStruct    = MicroNN.FullyConnStruct() )
 
     # ------------------------------------------------------
 
     def GetInputLayer(self) :
-        if len(self._layers) > 0 :
-            inputLayer = self._layers[0]
-            if isinstance(inputLayer, MicroNN.InputLayer) :
-                return inputLayer
-        return None
+        return self._layers[0] if len(self._layers) > 0 else None
 
     # ------------------------------------------------------
 
     def GetOutputLayer(self) :
-        if len(self._layers) > 0 :
-            outputLayer = self._layers[len(self._layers)-1]
-            if isinstance(outputLayer, MicroNN.OutputLayer) :
-                return outputLayer
-        return None
+        return self._layers[len(self._layers)-1] if len(self._layers) > 1 else None
 
     # ------------------------------------------------------
 
@@ -2764,8 +2728,7 @@ class MicroNN :
 
     @property
     def IsNetworkComplete(self) :
-        return ( self.GetInputLayer()  is not None and \
-                 self.GetOutputLayer() is not None )
+        return (len(self._layers) > 1)
 
     @property
     def MSE(self) :

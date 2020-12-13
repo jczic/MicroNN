@@ -12,7 +12,7 @@ l2 = microNN.AddLayer       ( dimensions  = MicroNN.Init1D(2),
                               initializer = MicroNN.LogisticInitializer(MicroNN.Initializer.HeUniform),
                               connStruct  = MicroNN.FullyConnected )
 
-l3 = microNN.AddOutputLayer ( dimensions  = MicroNN.Init1D(1),
+l3 = microNN.AddLayer       ( dimensions  = MicroNN.Init1D(1),
                               shape       = MicroNN.Shape.Bool,
                               activation  = MicroNN.Activation.Heaviside,
                               initializer = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
