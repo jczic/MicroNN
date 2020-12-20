@@ -26,7 +26,7 @@ class MicroNNException(Exception) :
 
 class MicroNN :
 
-    VERSION                        = '1.0.9'
+    VERSION                        = '1.1.0'
 
     DEFAULT_LEARNING_RATE          = 1.0
     DEFAULT_PLASTICITY_STRENGTHING = 1.0
@@ -750,6 +750,7 @@ class MicroNN :
                       shape,
                       activation    = None,
                       initializer   = None,
+                      normalize     = False,
                       biasValue     = None ) :
             if type(self) is MicroNN.BaseLayer :
                 raise MicroNN.LayerException('"BaseLayer" is an abstract class and cannot be instancied.')
@@ -789,6 +790,7 @@ class MicroNN :
             self._shape          = shape
             self._activation     = activation
             self._initializer    = initializer
+            self._normalize      = normalize
             self._topLayer       = topLayer
             self._bottomLayer    = None
             if not isinstance(self, MicroNN.InputLayer) and biasValue is not None :
@@ -879,6 +881,21 @@ class MicroNN :
 
         def ComputeOutput(self) :
             raise MicroNN.LayerException('"ComputeOutput" method must be implemented.')
+
+        # ------------------------------------------------------
+
+        def NormalizeOutput(self) :
+            if self._normalize :
+                neuronsList = self.GetNeuronsList()
+                valMin      = None
+                valMax      = None
+                for n in neuronsList :
+                    valMin = n.Output if valMin is None else min(n.Output, valMin)
+                    valMax = n.Output if valMax is None else max(n.Output, valMax)
+                delta = valMax-valMin
+                if delta > 0 :
+                    for n in neuronsList :
+                        n.Output = (n.Output-valMin) / delta - 0.5
 
         # ------------------------------------------------------
 
@@ -1134,6 +1151,7 @@ class MicroNN :
                       shape,
                       activation    = None,
                       initializer   = None,
+                      normalize     = False,
                       connStruct    = None,
                       biasValue     = 1.0 ) :
             super().__init__( parentMicroNN = parentMicroNN,
@@ -1141,6 +1159,7 @@ class MicroNN :
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
+                              normalize     = normalize,
                               biasValue     = biasValue )
             if self._topLayer is not None :
                 if connStruct is None :
@@ -1242,7 +1261,8 @@ class MicroNN :
                       stride,
                       shape,
                       activation,
-                      initializer ) :
+                      initializer,
+                      normalize = False ) :
             if not isinstance(filtersCount, int) or filtersCount <= 0 :
                 raise MicroNN.LayerException('"filtersCount" must be of "int" type greater than zero.')
             if not isinstance(filtersDepth, int) or filtersDepth <= 0 :
@@ -1276,6 +1296,7 @@ class MicroNN :
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
+                              normalize     = normalize,
                               biasValue     = None )
             self._kernel                       = MicroNN()
             self._kernel.LearningRate          = parentMicroNN.LearningRate
@@ -1438,7 +1459,8 @@ class MicroNN :
                       deconvSize,
                       shape,
                       activation,
-                      initializer ) :
+                      initializer,
+                      normalize = False ) :
             if not isinstance(filtersCount, int) or filtersCount <= 0 :
                 raise MicroNN.LayerException('"filtersCount" must be of "int" type greater than zero.')
             if not isinstance(filtersDepth, int) or filtersDepth <= 0 :
@@ -1474,6 +1496,7 @@ class MicroNN :
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
+                              normalize     = normalize,
                               biasValue     = None )
             self._kernel                       = MicroNN()
             self._kernel.LearningRate          = parentMicroNN.LearningRate
@@ -2343,6 +2366,7 @@ class MicroNN :
                   shape,
                   activation  = None,
                   initializer = None,
+                  normalize   = False,
                   connStruct  = None,
                   biasValue   = 1.0 ) :
         return MicroNN.Layer( parentMicroNN = self,
@@ -2350,6 +2374,7 @@ class MicroNN :
                               shape         = shape,
                               activation    = activation,
                               initializer   = initializer,
+                              normalize     = normalize,
                               connStruct    = connStruct,
                               biasValue     = biasValue )
 
@@ -2369,7 +2394,8 @@ class MicroNN :
                         stride,
                         shape,
                         activation  = None,
-                        initializer = None ) :
+                        initializer = None,
+                        normalize   = False ) :
         return MicroNN.Conv2DLayer( parentMicroNN = self,
                                     filtersCount  = filtersCount,
                                     filtersDepth  = filtersDepth,
@@ -2377,7 +2403,8 @@ class MicroNN :
                                     stride        = stride,
                                     shape         = shape,
                                     activation    = activation,
-                                    initializer   = initializer )
+                                    initializer   = initializer,
+                                    normalize     = normalize )
 
     # ------------------------------------------------------
 
@@ -2388,7 +2415,8 @@ class MicroNN :
                           deconvSize,
                           shape,
                           activation  = None,
-                          initializer = None ) :
+                          initializer = None,
+                          normalize   = False ) :
         return MicroNN.Deconv2DLayer( parentMicroNN = self,
                                       filtersCount  = filtersCount,
                                       filtersDepth  = filtersDepth,
@@ -2396,7 +2424,8 @@ class MicroNN :
                                       deconvSize    = deconvSize,
                                       shape         = shape,
                                       activation    = activation,
-                                      initializer   = initializer )
+                                      initializer   = initializer,
+                                      normalize     = normalize )
 
     # ------------------------------------------------------
 
@@ -2646,6 +2675,7 @@ class MicroNN :
                 if not isinstance(layer, MicroNN.InputLayer) :
                     layer.ComputeInput()
                     layer.ComputeOutput()
+                    layer.NormalizeOutput()
         except OverflowError as ex :
             raise MicroNNException('Exploding Gradients (math overflow error).')
 

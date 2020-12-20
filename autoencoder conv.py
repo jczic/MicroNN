@@ -13,7 +13,7 @@ batchSize       = 10    # Size of minibatchs
 evalCount       = 25    # Number of evaluations
 
 w               = 32    # Sides size of images
-s               = 10    # Sides size of rectangles
+s               = 10    # Sides size of circles
 
 # ----------------------------------------------------------------
 
@@ -29,7 +29,8 @@ l2 = microNN.AddConv2DLayer   ( filtersCount  = 5,
                                 stride        = 2,
                                 shape         = MicroNN.Shape.Neuron,
                                 activation    = MicroNN.Activation.LeakyReLU,
-                                initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform) )
+                                initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
+                                normalize     = True )
 
 l3 = microNN.AddConv2DLayer   ( filtersCount  = 3,
                                 filtersDepth  = 1,
@@ -37,7 +38,8 @@ l3 = microNN.AddConv2DLayer   ( filtersCount  = 3,
                                 stride        = 2,
                                 shape         = MicroNN.Shape.Neuron,
                                 activation    = MicroNN.Activation.LeakyReLU,
-                                initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform) )
+                                initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
+                                normalize     = True )
 
 l4 = microNN.AddDeconv2DLayer ( filtersCount  = 5,
                                 filtersDepth  = 3,
@@ -45,7 +47,8 @@ l4 = microNN.AddDeconv2DLayer ( filtersCount  = 5,
                                 deconvSize    = 2,
                                 shape         = MicroNN.Shape.Neuron,
                                 activation    = MicroNN.Activation.LeakyReLU,
-                                initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform) )
+                                initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
+                                normalize     = True )
 
 l5 = microNN.AddDeconv2DLayer ( filtersCount  = 3,
                                 filtersDepth  = 1,
@@ -66,13 +69,13 @@ print()
 
 # ----------------------------------------------------------------
 
-# Function: Gets an image with random rectangle position,
+# Function: Gets an image with random circle position,
 def getPx() :
     x    = int(random() * (w-s))
     y    = int(random() * (w-s))
     img  = Image.new('RGB', (w, w), (0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.rectangle((x, y, x+s, y+s), fill=(255, 255, 255))
+    draw.ellipse((x, y, x+s, y+s), fill=(255, 255, 255))
     return [ [ img.getpixel((x, y))[0] for y in range(w) ] for x in range(w) ]
 
 # ----------------------------------------------------------------
