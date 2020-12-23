@@ -8,8 +8,8 @@ from random     import random
 # ----------------------------------------------------------------
 
 etaLR           = 3.0   # Learning rate
-explCount       = 50    # Number of examples
-batchSize       = 10    # Size of minibatchs
+explCount       = 100   # Number of examples
+batchSize       = 5     # Size of minibatchs
 evalCount       = 25    # Number of evaluations
 
 w               = 32    # Sides size of images
@@ -23,8 +23,8 @@ microNN.LearningRate = etaLR
 l1 = microNN.AddInputLayer    ( dimensions    = MicroNN.Init2D(w, w),
                                 shape         = MicroNN.Shape.Byte )
 
-l2 = microNN.AddConv2DLayer   ( filtersCount  = 5,
-                                filtersDepth  = 3,
+l2 = microNN.AddConv2DLayer   ( filtersCount  = 10,
+                                filtersDepth  = 5,
                                 convSize      = 3,
                                 stride        = 2,
                                 shape         = MicroNN.Shape.Neuron,
@@ -32,7 +32,7 @@ l2 = microNN.AddConv2DLayer   ( filtersCount  = 5,
                                 initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
                                 normalize     = True )
 
-l3 = microNN.AddConv2DLayer   ( filtersCount  = 3,
+l3 = microNN.AddConv2DLayer   ( filtersCount  = 5,
                                 filtersDepth  = 1,
                                 convSize      = 3,
                                 stride        = 2,
@@ -42,17 +42,17 @@ l3 = microNN.AddConv2DLayer   ( filtersCount  = 3,
                                 normalize     = True )
 
 l4 = microNN.AddDeconv2DLayer ( filtersCount  = 5,
-                                filtersDepth  = 3,
-                                convSize      = 3,
+                                filtersDepth  = 5,
+                                convSize      = 5,
                                 deconvSize    = 2,
                                 shape         = MicroNN.Shape.Neuron,
                                 activation    = MicroNN.Activation.LeakyReLU,
                                 initializer   = MicroNN.ReLUInitializer(MicroNN.Initializer.HeUniform),
                                 normalize     = True )
 
-l5 = microNN.AddDeconv2DLayer ( filtersCount  = 3,
+l5 = microNN.AddDeconv2DLayer ( filtersCount  = 10,
                                 filtersDepth  = 1,
-                                convSize      = 3,
+                                convSize      = 5,
                                 deconvSize    = 2,
                                 shape         = MicroNN.Shape.Byte,
                                 activation    = MicroNN.Activation.Sigmoid,
@@ -91,12 +91,14 @@ def drawValues(layer, depthIdx, img, posX, posY) :
             val    = values[x][y] if depthIdx is None else values[x][y][depthIdx]
             valMin = val if valMin is None else min(val, valMin)
             valMax = val if valMax is None else max(val, valMax)
-    # Draws the calibrated values of the layer output from specified depth,
-    for x in range(len(values)) :
-        for y in range(len(values[x])) :
-            val = values[x][y] if depthIdx is None else values[x][y][depthIdx]
-            col = round( (val-valMin) * 255 / (valMax-valMin) )
-            img.putpixel((posX+x, posY+y), (col, col, col))
+    delta = valMax-valMin
+    if delta > 0 :
+        # Draws the calibrated values of the layer output from specified depth,
+        for x in range(len(values)) :
+            for y in range(len(values[x])) :
+                val = values[x][y] if depthIdx is None else values[x][y][depthIdx]
+                col = round( (val-valMin) * 255 / delta )
+                img.putpixel((posX+x, posY+y), (col, col, col))
 
 # ----------------------------------------------------------------
 
